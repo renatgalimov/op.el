@@ -47,4 +47,3 @@ Stores the result along with a monotonically increasing timestamp."
 
 ;; Set up a timer that runs when Emacs is idle for a while
 (run-with-idle-timer 60 t #'op-read-cache-cleanup)
-ß
