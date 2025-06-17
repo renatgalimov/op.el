@@ -1,6 +1,9 @@
 name: Test
 on:
   pull_request:
+  push:
+    branches:
+      - master
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -9,10 +12,12 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        emacs_version: ["29.3", "30.1"]
+    container:
+      image: silex/emacs:${{ matrix.emacs_version }}
     steps:
       - uses: actions/checkout@v4
-      - uses: purcell/setup-emacs@master
-        with:
-          version: 29.3
       - name: Run tests
         run: ./scripts/run-tests.sh
