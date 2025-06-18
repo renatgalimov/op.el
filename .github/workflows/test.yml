@@ -19,5 +19,9 @@ jobs:
       image: silex/emacs:${{ matrix.emacs_version }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Cask
+        run: |
+          git clone --depth 1 https://github.com/cask/cask
+          make -C cask install
       - name: Run tests
         run: ./scripts/run-tests.sh
