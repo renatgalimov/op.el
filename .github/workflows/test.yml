@@ -16,17 +16,12 @@ jobs:
       matrix:
         emacs_version: ["29.3", "30.1"]
     container:
-      image: silex/emacs:${{ matrix.emacs_version }}
+      image: silex/emacs:${{ matrix.emacs_version }}-ci-cask
     steps:
       - uses: actions/checkout@v4
       - name: Install git and make
         run: |
           apt-get update -y
           apt-get install -y git make sudo
-      - name: Install Cask
-        run: |
-          git clone --depth 1 https://github.com/cask/cask
-          make -C cask
-          sudo make -C cask install
       - name: Run tests
         run: ./scripts/run-tests.sh
