@@ -19,9 +19,5 @@ jobs:
       image: silex/emacs:${{ matrix.emacs_version }}-ci-cask
     steps:
       - uses: actions/checkout@v4
-      - name: Install git and make
-        run: |
-          apt-get update -y
-          apt-get install -y git make sudo
       - name: Run tests
         run: ./scripts/run-tests.sh
