@@ -22,11 +22,11 @@ jobs:
       - name: Install git and make
         run: |
           apt-get update -y
-          apt-get install -y git make
+          apt-get install -y git make sudo
       - name: Install Cask
         run: |
           git clone --depth 1 https://github.com/cask/cask
           make -C cask
-          sudo make -C cask install
+          sudo make -C cask installgi
       - name: Run tests
         run: ./scripts/run-tests.sh
