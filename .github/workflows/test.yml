@@ -26,6 +26,7 @@ jobs:
       - name: Install Cask
         run: |
           git clone --depth 1 https://github.com/cask/cask
-          make -C cask install
+          make -C cask
+          sudo make -C cask install
       - name: Run tests
         run: ./scripts/run-tests.sh
