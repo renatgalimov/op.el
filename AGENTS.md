@@ -17,7 +17,7 @@ After modifying an emacs-lisp file, automatially format it with:
 
 The environment has `gh` installed. You can do `gh issues view <issue-id>` to view the issue.
 
-The environment **has to** have the `GH_TOKEN` variable. Otherwise - report an error and stop the work. Report, report an error and stop the work. 
+The environment has to have an authenticated `gh`. `gh auth status` should succeed, otherwise - report an error and stop operation.
 
 # Agent Environment Setup
 
