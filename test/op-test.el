@@ -4,6 +4,21 @@
 (load-file "op.el")
 
 (describe "op-read"
+          (before-each
+	       (setq op-read-cache (make-hash-table :test #'equal)))
+
+	      (it "caches result"
+	          (let ((called 0))
+		        (cl-letf (((symbol-function 'call-process)
+			               (lambda (&rest args)
+			                 (setq called (1+ called))
+			                 (with-current-buffer (nth 2 args)
+			                   (insert "secret"))
+			                 0)))
+		          (expect (op-read "item") :to-equal "secret")
+		          (expect called :to-be 1)
+		          (expect (op-read "item") :to-equal "secret")
+		          (expect called :to-be 1))))
 	      (it "when called twice should use the cached result"
 	          (let ((op-read-cache (make-hash-table :test 'equal))
 		            (called 0))
@@ -23,21 +38,21 @@
 		        (puthash "recent" (cons "val" (float-time)) op-read-cache)
 		        (op-read-cache-cleanup)
 		        (expect (gethash "old" op-read-cache) :to-be nil)
-		        (expect (gethash "recent" op-read-cache) :not :to-be nil))))
+		        (expect (gethash "recent" op-read-cache) :not :to-be nil)))
 
-(ert-deftest op-read-does-not-cache-error-output ()
-  (let ((op-read-cache (make-hash-table :test 'equal))
-        (called 0))
-    (cl-letf (((symbol-function 'call-process)
-               (lambda (&rest args)
-                 (setq called (1+ called))
-                 (with-current-buffer (nth 2 args)
-                   (insert "err"))
-                 1)))
-      (should (string= (op-read "item") "err"))
-      (should-not (gethash "item" op-read-cache))
-      (should (= called 1))
-      (should (string= (op-read "item") "err"))
-      (should (= called 2)))))
+          (it "does not cache error output"
+	          (let ((called 0))
+	            (cl-letf (((symbol-function 'call-process)
+			               (lambda (&rest args)
+			                 (setq called (1+ called))
+			                 (with-current-buffer (nth 2 args)
+			                   (insert "err"))
+			                 1)))
+		          (expect (op-read "item") :to-equal "err")
+		          (expect (gethash "item" op-read-cache) :to-be nil)
+		          (expect called :to-be 1)
+		          (expect (op-read "item") :to-equal "err")
+		          (expect called :to-be 2)))))
+
 
 (provide 'op-test)
