@@ -4,6 +4,10 @@ Agent guidelines for `renatgalimov/op.el` GitHub repo.
 
 GitHub: `renatgalimov/op.el`
 
+## Git
+
+This repository uses Git history responsively. Use `git log` to expand your context and see the reasons of why something was done.
+
 ## Markdown
 
 When writing a Markdown or OrgMode file, don't break lines in the middle of a sentence to maintain line width.
