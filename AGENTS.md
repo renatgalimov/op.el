@@ -6,7 +6,8 @@ GitHub: `renatgalimov/op.el`
 
 ## Git
 
-This repository uses Git history responsively. Use `git log` to expand your context and see the reasons of why something was done.
+This repository uses Git history responsively. 
+Use `git log` to expand your context and see the reasons behind certain actions.
 
 ## Markdown
 
@@ -22,15 +23,31 @@ After modifying an emacs-lisp file, automatially format it with:
         -f save-buffer
 ```
 
+# Testing
+
+The environment **should have** `op` tool installed. If it's not available - *stop the operation*;
+
 # GitHub CLI (`gh`) usage
 
 The environment **has to** have a working `gh` installation. 
 `gh auth status` should succeed; otherwise report an error and stop operation.
 
-
-The environment has `gh` installed. You cannot freely use `gh` as it uses POST requests, and the agent environment forbids POST requests. Instead - you should use `gh` like `gh api repos/renatgalimov/op.el/issues/<issue id>`
+The environment has `gh` installed.
+When working with - you could use only `gh api` command, like `gh api repos/renatgalimov/op.el/issues/<issue id>`
+Avoid calling other `gh` commands as they use POST requests, and the agent environment forbids POST requests.
 
 
 # Agent Environment Setup
 
-Agent environment Setup code is located in `scripts/setup-agent.sh`
+## Setup code
+
+Located in `scripts/setup-agent.sh`
+
+## Secrets
+
+`_GH_TOKEN` - needed to read GitHub issues.
+
+## Domains
+```
+downloads.1password.com
+```
