@@ -12,9 +12,7 @@
 
 1Password integration for Emacs
 
-This repository uses GitHub Actions to run Buttercup tests and to verify that all Emacs Lisp files are properly indented. The indentation check can also be run locally via `./scripts/check-indent.sh`.
-
-## Contributing
+This repository uses GitHub Actions to run Buttercup tests and verify that all Emacs Lisp files are properly indented. The indentation check can also be run locally via `./scripts/check-indent.sh`.
 
 Write unit tests with [Buttercup](https://github.com/jorgenschaefer/emacs-buttercup) and name each spec using the pattern **X when Y should Z**.
 
