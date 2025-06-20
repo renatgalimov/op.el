@@ -21,18 +21,22 @@ Each entry is a cons cell of the form (RESULT . TIMESTAMP).")
 (defun op-read (id &optional account)
   "Read a field from a 1Password item, caching results for efficiency.
 Stores the result along with a monotonically increasing timestamp."
-  (let* ((account (if account (format "--account %s" account) ""))
-         (cache-key (if account (format "%s|%s" account id) id))
+  (let* ((cache-key (if account (format "%s|%s" account id) id))
          (entry (gethash cache-key op-read-cache))
          (cached-result (car-safe entry))
          (timestamp (cdr-safe entry))
          (now (float-time)))
     (if (and cached-result (< (- now timestamp) (* 10 60))) ; 10 minutes validity
         cached-result
-      (let ((result (string-trim
-                     (shell-command-to-string
-                      (format "op %s read \"%s\"" account id)))))
-        (puthash cache-key (cons result now) op-read-cache)
+      (let* ((args (append (when account (list "--account" account))
+                           (list "read" id)))
+             (result-buffer (generate-new-buffer " *op-read*"))
+             (exit-code (apply #'call-process "op" nil result-buffer nil args))
+             (result (with-current-buffer result-buffer
+                       (prog1 (string-trim (buffer-string))
+                         (kill-buffer result-buffer)))))
+        (when (zerop exit-code)
+          (puthash cache-key (cons result now) op-read-cache))
         result))))
 
 
