@@ -30,6 +30,10 @@ After modifying an emacs-lisp file, automatially format it with:
 
 The environment **should have** `op` tool installed. If it's not available - *stop the operation*;
 
+## Test-Driven Development
+
+Before implementing a new feature or fixing a bug, first write a Buttercup test that describes the expected behavior. Run the test to ensure it fails, then implement the feature or fix, and re-run the test to ensure it passes.
+
 # GitHub CLI (`gh`) usage
 
 The environment **has to** have a working `gh` installation. 
