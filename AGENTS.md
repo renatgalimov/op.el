@@ -3,17 +3,20 @@
 Agent guidelines for `renatgalimov/op.el` GitHub repo.
 
 GitHub: `renatgalimov/op.el`
+# Workflow
 
-## Git
+Whenever you start the task, rebase your branch against the "main" branch in the `renatgalimov/op.el` GitHub repo. If you fail to rebase, stop and report immediately.
+
+# Git
 
 This repository uses Git history responsively. 
 Use `git log` to expand your context and see the reasons behind certain actions.
 
-## Markdown
+# Markdown
 
 When writing a Markdown or OrgMode file, don't break lines in the middle of a sentence to maintain line width.
 
-## emacs-lisp
+# emacs-lisp
 
 After modifying an emacs-lisp file, automatially format it with:
 
@@ -35,7 +38,6 @@ The environment **has to** have a working `gh` installation.
 The environment has `gh` installed.
 When working with - you could use only `gh api` command, like `gh api repos/renatgalimov/op.el/issues/<issue id>`
 Avoid calling other `gh` commands as they use POST requests, and the agent environment forbids POST requests.
-
 
 # Agent Environment Setup
 
