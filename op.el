@@ -14,6 +14,15 @@
 (require 'subr-x)
 (require 'time)
 
+(defgroup op nil
+  "1Password integration via the op CLI."
+  :group 'applications)
+
+(defcustom op-read-cache-duration (* 10 60)
+  "Cache duration in seconds for `op-read` results. Default is 10 minutes."
+  :type 'integer
+  :group 'op)
+
 (defvar op-read-cache (make-hash-table :test 'equal)
   "Cache for storing results of `op-read' calls.
 Each entry is a cons cell of the form (RESULT . TIMESTAMP).")
@@ -26,7 +35,7 @@ Stores the result along with a monotonically increasing timestamp."
          (cached-result (car-safe entry))
          (timestamp (cdr-safe entry))
          (now (float-time)))
-    (if (and cached-result (< (- now timestamp) (* 10 60))) ; 10 minutes validity
+    (if (and cached-result (< (- now timestamp) op-read-cache-duration))
         cached-result
       (let* ((args (append (when account (list "--account" account))
                            (list "read" id)))
@@ -41,11 +50,11 @@ Stores the result along with a monotonically increasing timestamp."
 
 
 (defun op-read-cache-cleanup (&optional force)
-  "Remove cache entries older than 10 minutes."
+  "Remove cache entries older than `op-read-cache-duration' seconds."
   (interactive "P")
   (let ((now (float-time)))
     (maphash (lambda (key val)
-               (when (or force (> (- now (cdr val)) (* 10 60)))
+               (when (or force (> (- now (cdr val)) op-read-cache-duration))
                  (remhash key op-read-cache)))
              op-read-cache)))
 
