@@ -1,8 +1,8 @@
 # Agent Contributions
 
-Agent guidelines for `renatgalimov/op.el` GitHub repo.
+The environment has `gh` installed. Only `gh api` commands may be used; avoid other subcommands.
 
-GitHub: `renatgalimov/op.el`
+The environment has to have an authenticated `gh`; `gh auth status` should succeed or report an error and stop.
 
 ## Git
 
