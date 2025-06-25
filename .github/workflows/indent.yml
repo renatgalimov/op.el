@@ -13,10 +13,9 @@ concurrency:
 jobs:
   indent:
     runs-on: ubuntu-latest
+    container:
+      image: silex/emacs:alpine-ci
     steps:
       - uses: actions/checkout@v4
-      - uses: purcell/setup-emacs@master
-        with:
-          version: 29.3
       - name: Check indentation
         run: ./scripts/check-indent.sh
