@@ -1,11 +1,11 @@
-# Agent Contributions
+# Facts
 
-Agent guidelines for `renatgalimov/op.el` GitHub repo.
+GitHub repository: `renatgalimov/op.el`
 
-GitHub: `renatgalimov/op.el`
 # Workflow
 
-Whenever you start the task, rebase your branch against the "main" branch in the `renatgalimov/op.el` GitHub repo. If you fail to rebase, stop and report immediately.
+- Always rebase your branch against the "main" branch in the `renatgalimov/op.el` GitHub repo. If you fail to rebase, stop and report immediately.
+- Implement the changes
 
 # Git
 
@@ -36,12 +36,11 @@ Before implementing a new feature or fixing a bug, first write a Buttercup test 
 
 # GitHub CLI (`gh`) usage
 
-The environment **has to** have a working `gh` installation. 
-`gh auth status` should succeed; otherwise report an error and stop operation.
+- The environment has `gh` installed
+  - Only `gh api` and `gh auth status` commands may be used; avoid other subcommands.
+  - The environment has to have an authenticated `gh`; `gh auth status` should succeed or report an error and stop.
 
-The environment has `gh` installed.
-When working with - you could use only `gh api` command, like `gh api repos/renatgalimov/op.el/issues/<issue id>`
-Avoid calling other `gh` commands as they use POST requests, and the agent environment forbids POST requests.
+- To read a GitHub issue content use `gh api repos/renatgalimov/op.el/issues<issue id>` subcommand.
 
 # Agent Environment Setup
 
