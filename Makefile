@@ -1,7 +1,15 @@
-.PHONY: lint
+.PHONY: test lint indent
+
+test:
+	cask install
+	cask exec emacs --batch -Q -L . -L test -l test/run-tests.el
+
+
 lint:
 	cask install
 	cask exec emacs --batch -Q \
-	  -f elisp-lint-files-batch \
 	  -l scripts/op-lint.el \
-	  -- $(wildcard *.el)
+	  $(wildcard *.el)
+
+indent:
+	./scripts/check-indent.sh

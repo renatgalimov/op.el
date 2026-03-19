@@ -17,5 +17,7 @@ jobs:
       image: silex/emacs:alpine-ci
     steps:
       - uses: actions/checkout@v4
-      - name: Check indentation
-        run: ./scripts/check-indent.sh
+      - name: Re-indent
+        run: make indent
+      - name: Check for modifications
+        run: git diff --exit-code

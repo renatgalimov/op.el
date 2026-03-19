@@ -1,0 +1,378 @@
+{
+  "id": "sre4q66mawycb5dzmm7ka7kblm",
+  "title": "Email",
+  "tags": ["OpElDuplicate", "OpElTest", "emacs-auth-source"],
+  "version": 3,
+  "vault": {
+    "id": "iglakoy2oyecdeoru2ndpw43nm",
+    "name": "Op.el"
+  },
+  "category": "EMAIL_ACCOUNT",
+  "last_edited_by": "VK6XJVTGTFE3TG6WEQZLYIDWEQ",
+  "created_at": "2026-03-10T11:17:44Z",
+  "updated_at": "2026-03-13T06:17:53Z",
+  "additional_information": "test@example.com",
+  "sections": [
+    {
+      "id": "Contact Information",
+      "label": "Contact Information"
+    },
+    {
+      "id": "SMTP",
+      "label": "SMTP"
+    }
+  ],
+  "fields": [
+    {
+      "id": "notesPlain",
+      "type": "STRING",
+      "purpose": "NOTES",
+      "label": "notesPlain",
+      "reference": "op://Op.el/Email/notesPlain"
+    },
+    {
+      "id": "pop_type",
+      "type": "MENU",
+      "label": "type",
+      "value": "imap",
+      "reference": "op://Op.el/Email/type"
+    },
+    {
+      "id": "pop_username",
+      "type": "STRING",
+      "label": "username",
+      "value": "test@example.com",
+      "reference": "op://Op.el/Email/username"
+    },
+    {
+      "id": "pop_server",
+      "type": "STRING",
+      "label": "server",
+      "value": "imap.example.com",
+      "reference": "op://Op.el/Email/server"
+    },
+    {
+      "id": "pop_port",
+      "type": "STRING",
+      "label": "port number",
+      "value": "993",
+      "reference": "op://Op.el/Email/port number"
+    },
+    {
+      "id": "pop_password",
+      "type": "CONCEALED",
+      "label": "password",
+      "value": "comanche-muscular-tabloids-minotaur-ally",
+      "reference": "op://Op.el/Email/password"
+    },
+    {
+      "id": "pop_security",
+      "type": "MENU",
+      "label": "security",
+      "value": "TLS",
+      "reference": "op://Op.el/Email/security"
+    },
+    {
+      "id": "pop_authentication",
+      "type": "MENU",
+      "label": "auth method",
+      "value": "password",
+      "reference": "op://Op.el/Email/auth method"
+    },
+    {
+      "id": "smtp_server",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "SMTP server",
+      "value": "smtp.exampole.com",
+      "reference": "op://Op.el/Email/SMTP/SMTP server"
+    },
+    {
+      "id": "smtp_port",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "port number",
+      "value": "2525",
+      "reference": "op://Op.el/Email/SMTP/port number"
+    },
+    {
+      "id": "smtp_username",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "username",
+      "value": "test@example.com",
+      "reference": "op://Op.el/Email/SMTP/username"
+    },
+    {
+      "id": "smtp_password",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "CONCEALED",
+      "label": "password",
+      "value": "eJDDddLdCowEum8Ea-ZTTRUZcQFY3Kpv*s!knDfxNJhnj",
+      "reference": "op://Op.el/Email/SMTP/password"
+    },
+    {
+      "id": "smtp_security",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "MENU",
+      "label": "security",
+      "value": "SSL",
+      "reference": "op://Op.el/Email/SMTP/security"
+    },
+    {
+      "id": "smtp_authentication",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "MENU",
+      "label": "auth method",
+      "value": "password",
+      "reference": "op://Op.el/Email/SMTP/auth method"
+    },
+    {
+      "id": "provider",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "provider",
+      "reference": "op://Op.el/Email/Contact Information/provider"
+    },
+    {
+      "id": "provider_website",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "provider's website",
+      "reference": "op://Op.el/Email/Contact Information/provider_website"
+    },
+    {
+      "id": "phone_local",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "phone (local)",
+      "reference": "op://Op.el/Email/Contact Information/phone_local"
+    },
+    {
+      "id": "phone_tollfree",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "phone (toll free)",
+      "reference": "op://Op.el/Email/Contact Information/phone_tollfree"
+    }
+  ]
+}
+{
+  "id": "a5xu5fjtmpr5lx56i6fymfq3c4",
+  "title": "Email Duplicate",
+  "tags": ["OpElDuplicate", "OpElTest", "emacs-auth-source"],
+  "version": 2,
+  "vault": {
+    "id": "iglakoy2oyecdeoru2ndpw43nm",
+    "name": "Op.el"
+  },
+  "category": "EMAIL_ACCOUNT",
+  "last_edited_by": "VK6XJVTGTFE3TG6WEQZLYIDWEQ",
+  "created_at": "2026-03-10T11:17:44Z",
+  "updated_at": "2026-03-13T06:16:46Z",
+  "additional_information": "test@example.com",
+  "sections": [
+    {
+      "id": "Contact Information",
+      "label": "Contact Information"
+    },
+    {
+      "id": "SMTP",
+      "label": "SMTP"
+    }
+  ],
+  "fields": [
+    {
+      "id": "notesPlain",
+      "type": "STRING",
+      "purpose": "NOTES",
+      "label": "notesPlain",
+      "reference": "op://Op.el/Email Duplicate/notesPlain"
+    },
+    {
+      "id": "pop_type",
+      "type": "MENU",
+      "label": "type",
+      "value": "imap",
+      "reference": "op://Op.el/Email Duplicate/type"
+    },
+    {
+      "id": "pop_username",
+      "type": "STRING",
+      "label": "username",
+      "value": "test@example.com",
+      "reference": "op://Op.el/Email Duplicate/username"
+    },
+    {
+      "id": "pop_server",
+      "type": "STRING",
+      "label": "server",
+      "value": "imap.example.com",
+      "reference": "op://Op.el/Email Duplicate/server"
+    },
+    {
+      "id": "pop_port",
+      "type": "STRING",
+      "label": "port number",
+      "value": "993",
+      "reference": "op://Op.el/Email Duplicate/port number"
+    },
+    {
+      "id": "pop_password",
+      "type": "CONCEALED",
+      "label": "password",
+      "value": "assigned-redo-headless-tremor-trunk",
+      "reference": "op://Op.el/Email Duplicate/password"
+    },
+    {
+      "id": "pop_security",
+      "type": "MENU",
+      "label": "security",
+      "value": "TLS",
+      "reference": "op://Op.el/Email Duplicate/security"
+    },
+    {
+      "id": "pop_authentication",
+      "type": "MENU",
+      "label": "auth method",
+      "value": "password",
+      "reference": "op://Op.el/Email Duplicate/auth method"
+    },
+    {
+      "id": "smtp_server",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "SMTP server",
+      "value": "smtp.exampole.com",
+      "reference": "op://Op.el/Email Duplicate/SMTP/SMTP server"
+    },
+    {
+      "id": "smtp_port",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "port number",
+      "value": "2525",
+      "reference": "op://Op.el/Email Duplicate/SMTP/port number"
+    },
+    {
+      "id": "smtp_username",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "STRING",
+      "label": "username",
+      "value": "test@example.com",
+      "reference": "op://Op.el/Email Duplicate/SMTP/username"
+    },
+    {
+      "id": "smtp_password",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "CONCEALED",
+      "label": "password",
+      "value": "eJDDddLdCowEum8Ea-ZTTRUZcQFY3Kpv*s!knDfxNJhnj",
+      "reference": "op://Op.el/Email Duplicate/SMTP/password"
+    },
+    {
+      "id": "smtp_security",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "MENU",
+      "label": "security",
+      "value": "SSL",
+      "reference": "op://Op.el/Email Duplicate/SMTP/security"
+    },
+    {
+      "id": "smtp_authentication",
+      "section": {
+        "id": "SMTP",
+        "label": "SMTP"
+      },
+      "type": "MENU",
+      "label": "auth method",
+      "value": "password",
+      "reference": "op://Op.el/Email Duplicate/SMTP/auth method"
+    },
+    {
+      "id": "provider",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "provider",
+      "reference": "op://Op.el/Email Duplicate/Contact Information/provider"
+    },
+    {
+      "id": "provider_website",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "provider's website",
+      "reference": "op://Op.el/Email Duplicate/Contact Information/provider_website"
+    },
+    {
+      "id": "phone_local",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "phone (local)",
+      "reference": "op://Op.el/Email Duplicate/Contact Information/phone_local"
+    },
+    {
+      "id": "phone_tollfree",
+      "section": {
+        "id": "Contact Information",
+        "label": "Contact Information"
+      },
+      "type": "STRING",
+      "label": "phone (toll free)",
+      "reference": "op://Op.el/Email Duplicate/Contact Information/phone_tollfree"
+    }
+  ]
+}

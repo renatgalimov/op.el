@@ -7,6 +7,11 @@
 	  (before-each
 	   (setq op-read-cache (make-hash-table :test #'equal)))
 
+	  (it "reads a secret via op executable"
+	      (let ((op-executable (expand-file-name "../bin/op.py"
+						     (file-name-directory load-file-name))))
+		(expect (op-read "op://Op.el/Email/password") :to-equal "comanche-muscular-tabloids-minotaur-ally")))
+
 	  (it "caches result"
 	      (let ((called 0))
 		(cl-letf (((symbol-function 'call-process)
@@ -15,10 +20,10 @@
 			     (with-current-buffer (nth 2 args)
 			       (insert "secret"))
 			     0)))
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-be 1)
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-be 1))))
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-be 1)
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-be 1))))
 
 	  (it "does not cache error output"
 	      (let ((called 0))
@@ -28,11 +33,11 @@
 			     (with-current-buffer (nth 2 args)
 			       (insert "err"))
 			     1)))
-			 (expect (op-read "item") :to-equal "err")
-			 (expect (gethash "item" op-read-cache) :to-be nil)
-			 (expect called :to-be 1)
-			 (expect (op-read "item") :to-equal "err")
-			 (expect called :to-be 2))))
+		  (expect (op-read "item") :to-equal "err")
+		  (expect (gethash "item" op-read-cache) :to-be nil)
+		  (expect called :to-be 1)
+		  (expect (op-read "item") :to-equal "err")
+		  (expect called :to-be 2))))
 
 	  (it "when called twice should use the cached result"
 	      (let ((op-read-cache (make-hash-table :test 'equal))
@@ -43,10 +48,10 @@
 			     (with-current-buffer (nth 2 args)
 			       (insert "secret"))
 			     0)))
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-equal 1)
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-equal 1)))))
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-equal 1)
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-equal 1)))))
 
 (describe "op-read-cache-cleanup"
 	  (it "when run should remove expired entries"
@@ -68,10 +73,10 @@
 			     (with-current-buffer (nth 2 args)
 			       (insert "secret"))
 			     0)))
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-equal 1)
-			 (sleep-for 2)
-			 (expect (op-read "item") :to-equal "secret")
-			 (expect called :to-equal 2)))))
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-equal 1)
+		  (sleep-for 2)
+		  (expect (op-read "item") :to-equal "secret")
+		  (expect called :to-equal 2)))))
 
 (provide 'op-test)

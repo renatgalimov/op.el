@@ -1,0 +1,62 @@
+{
+  "id": "ye3rfh2lxaeadxw5c6fy4a5lz4",
+  "title": "Op El Test Forge",
+  "tags": ["OpElTest"],
+  "version": 1,
+  "vault": {
+    "id": "vnn6pmghw52nymmcavajzclbby",
+    "name": "Employee"
+  },
+  "category": "LOGIN",
+  "last_edited_by": "IAH6DN35JBCRLIS57PQOMZYK6Y",
+  "created_at": "2026-03-15T03:45:00Z",
+  "updated_at": "2026-03-15T03:45:00Z",
+  "additional_information": "rgalimov^forge",
+  "sections": [
+    {
+      "id": "add more"
+    }
+  ],
+  "fields": [
+    {
+      "id": "username",
+      "type": "STRING",
+      "purpose": "USERNAME",
+      "label": "username",
+      "value": "rgalimov^forge",
+      "reference": "op://Employee/Op El Test Forge/username"
+    },
+    {
+      "id": "password",
+      "type": "CONCEALED",
+      "purpose": "PASSWORD",
+      "label": "password",
+      "value": "dogs-spit-gee-rejected-briefed",
+      "entropy": 70.77290344238281,
+      "reference": "op://Employee/Op El Test Forge/password",
+      "password_details": {
+        "entropy": 70,
+        "generated": true,
+        "strength": "FANTASTIC",
+        "history": ["movers-lila-pursuit-critters-engaging"]
+      }
+    },
+    {
+      "id": "notesPlain",
+      "type": "STRING",
+      "purpose": "NOTES",
+      "label": "notesPlain",
+      "reference": "op://Employee/Op El Test Forge/notesPlain"
+    },
+    {
+      "id": "dcwwafrvpniglquu647hndewya",
+      "section": {
+        "id": "add more"
+      },
+      "type": "STRING",
+      "label": "server",
+      "value": "api.github.com",
+      "reference": "op://Employee/Op El Test Forge/add more/server"
+    }
+  ]
+}

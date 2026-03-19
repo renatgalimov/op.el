@@ -1,7 +1,7 @@
 ;;; op.el --- 1Password interaction via op command -*- lexical-binding: t; -*-
 
 ;; Author: Renat Galimov
-;; Version: 0.1
+;; Version: 0.2
 ;; Keywords: password, op, 1password
 
 ;;; Commentary:
@@ -17,6 +17,11 @@
 (defgroup op nil
   "1Password integration via the op CLI."
   :group 'applications)
+
+(defcustom op-executable "op"
+  "Path to the op CLI executable."
+  :type 'string
+  :group 'op)
 
 (defcustom op-read-cache-duration (* 10 60)
   "Cache duration in seconds for `op-read` results. Default is 10 minutes."
@@ -44,7 +49,7 @@ You can specify an ACCOUNT to read from a specific 1Password account."
       (let* ((args (append (when account (list "--account" account))
                            (list "read" path)))
              (result-buffer (generate-new-buffer "*op-read*"))
-             (exit-code (apply #'call-process "op" nil result-buffer nil args))
+             (exit-code (apply #'call-process op-executable nil result-buffer nil args))
              (result (with-current-buffer result-buffer
                        (prog1 (string-trim (buffer-string))
                          (kill-buffer result-buffer)))))

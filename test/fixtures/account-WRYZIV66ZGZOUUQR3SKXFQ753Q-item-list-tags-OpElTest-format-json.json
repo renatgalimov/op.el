@@ -1,0 +1,17 @@
+[
+  {
+    "id": "ye3rfh2lxaeadxw5c6fy4a5lz4",
+    "title": "Op El Test Forge",
+    "tags": ["OpElTest"],
+    "version": 1,
+    "vault": {
+      "id": "vnn6pmghw52nymmcavajzclbby",
+      "name": "Employee"
+    },
+    "category": "LOGIN",
+    "last_edited_by": "IAH6DN35JBCRLIS57PQOMZYK6Y",
+    "created_at": "2026-03-15T03:45:00Z",
+    "updated_at": "2026-03-15T03:45:00Z",
+    "additional_information": "rgalimov^forge"
+  }
+]
