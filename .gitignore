@@ -2,6 +2,7 @@
 *.elc
 
 # Packaging
+cask/
 .cask/
 .eask/
 .eldev/

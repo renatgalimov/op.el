@@ -1,0 +1,7 @@
+- Always rebase your branch against the "main" branch in the `renatgalimov/op.el` GitHub repo. If you fail to rebase, *stop the operation*;
+- Use `git log` to expand your context and see the reasons behind certain actions.
+- The environment **should have** `op` tool installed. If it's not available - *stop the operation*;
+- The environment **should have** `gh` installed.  If it's not available - *stop the operation*;
+- The environment **should have** authenticated `gh`; `gh auth status` should succeed or report an error and stop.
+- Only `gh api` and `gh auth status` commands may be used; avoid other subcommands.
+- To read a GitHub issue content use `gh api repos/renatgalimov/op.el/issues<issue id>` subcommand.

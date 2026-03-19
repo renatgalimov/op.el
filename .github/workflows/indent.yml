@@ -1,0 +1,21 @@
+name: Indent Check
+on:
+  pull_request:
+    paths:
+      - '**/*.el'
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  indent:
+    runs-on: ubuntu-latest
+    container:
+      image: silex/emacs:alpine-ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check indentation
+        run: ./scripts/check-indent.sh
