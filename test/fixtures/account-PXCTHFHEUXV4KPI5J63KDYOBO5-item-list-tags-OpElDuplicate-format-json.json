@@ -1,0 +1,32 @@
+[
+  {
+    "id": "a5xu5fjtmpr5lx56i6fymfq3c4",
+    "title": "Email Duplicate",
+    "tags": ["OpElDuplicate", "OpElTest", "emacs-auth-source"],
+    "version": 2,
+    "vault": {
+      "id": "iglakoy2oyecdeoru2ndpw43nm",
+      "name": "Op.el"
+    },
+    "category": "EMAIL_ACCOUNT",
+    "last_edited_by": "VK6XJVTGTFE3TG6WEQZLYIDWEQ",
+    "created_at": "2026-03-10T11:17:44Z",
+    "updated_at": "2026-03-13T06:16:46Z",
+    "additional_information": "test@example.com"
+  },
+  {
+    "id": "sre4q66mawycb5dzmm7ka7kblm",
+    "title": "Email",
+    "tags": ["OpElDuplicate", "OpElTest", "emacs-auth-source"],
+    "version": 3,
+    "vault": {
+      "id": "iglakoy2oyecdeoru2ndpw43nm",
+      "name": "Op.el"
+    },
+    "category": "EMAIL_ACCOUNT",
+    "last_edited_by": "VK6XJVTGTFE3TG6WEQZLYIDWEQ",
+    "created_at": "2026-03-10T11:17:44Z",
+    "updated_at": "2026-03-13T06:17:53Z",
+    "additional_information": "test@example.com"
+  }
+]

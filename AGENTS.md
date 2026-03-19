@@ -5,3 +5,6 @@
 - The environment **should have** authenticated `gh`; `gh auth status` should succeed or report an error and stop.
 - Only `gh api` and `gh auth status` commands may be used; avoid other subcommands.
 - To read a GitHub issue content use `gh api repos/renatgalimov/op.el/issues<issue id>` subcommand.
+- When tests need mock data, do not fabricate fixture files. Ask the human to create the entry in 1Password, then run `bin/op.py` in `verify` mode (`OP_MODE=verify`) to generate the fixture from real data.
+- Do not mock `op` calls using Emacs Lisp (e.g. `cl-letf` on `call-process`). All op invocations go through `bin/op.py`, which supports `.err` fixture files for error cases. To test a failing op command, either use a non-existent fixture path or create a `.err` file (line 1 = exit code, remaining lines = stderr).
+- Prefer `member` (or `member-ignore-case`) over nested `seq-some` for list membership checks. Use `(and (member-ignore-case value list) value)` instead of iterating the list with a lambda that compares each element.

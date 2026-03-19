@@ -14,6 +14,43 @@
 
 This repository uses GitHub Actions to run Buttercup tests and verify that all Emacs Lisp files are properly indented. The indentation check can also be run locally via `./scripts/check-indent.sh`.
 
+## auth-source Integration
+
+The `op-auth-source` package provides an [auth-source](https://www.gnu.org/software/emacs/manual/html_mono/auth.html) backend so that Emacs packages like smtpmail, Gnus, ERC, and others can fetch credentials from 1Password automatically.
+
+### Setup
+
+```elisp
+(require 'op-auth-source)
+(op-auth-source-enable)
+```
+
+This adds `1password` to your `auth-sources` list. Emacs will then consult 1Password when any package calls `auth-source-search`.
+
+### 1Password Setup
+
+Tag the items you want Emacs to access with `emacs-auth-source` in 1Password. The backend only searches items with this tag.
+
+Each item should have:
+- A **URL** matching the host (e.g., `https://smtp.gmail.com:587`)
+- A **username** in the item's username field
+- A **password** in the item's password field
+
+### How It Works
+
+When a package searches for credentials (e.g., `:host "smtp.gmail.com" :user "alice@gmail.com" :port 587`), the backend:
+
+1. Runs `op item list --tags emacs-auth-source --format json` to list tagged items
+2. Filters items by matching URLs against the host and port
+3. Matches the username against the item's username field
+4. Returns the password via `op item get <id> --fields label=password`
+
+### Disabling
+
+```elisp
+(op-auth-source-disable)
+```
+
 ## Contributing
 
 Write unit tests with [Buttercup](https://github.com/jorgenschaefer/emacs-buttercup) and name each spec using the pattern **X when Y should Z**.
