@@ -153,13 +153,14 @@ Strings pass through; symbols are converted via `symbol-name'."
 (defun op-auth-source--match-criterion (item label criterion)
   "Return the resolved match value if ITEM matches CRITERION for LABEL, or nil.
 LABEL is a keyword like :host.  Ignored keys return `skipped'.
-CRITERION may be an atom or a list; nil and t are wildcards (return `skipped').
+A nil CRITERION is treated as absent (returns `skipped').
+A t CRITERION means \"match any value\" and returns `wildcard'.
 When CRITERION is a list, return the first element that matches.
 Logs rejected criteria when debugging is enabled."
   (cond
    ((memq label op-auth-source--ignored-keys) 'skipped)
    ((null criterion) 'skipped)
-   ((eq criterion t) 'skipped)
+   ((eq criterion t) 'wildcard)
    (t (let ((candidates (if (listp criterion) criterion (list criterion))))
         (or (seq-some (lambda (candidate)
                         (when (op-auth-source--field-match-p item label candidate)
@@ -183,12 +184,16 @@ that matched.  Symbol values are coerced to strings.
 Returns a plist like (:host \"matched.com\" :user \"me@x.com\" ...)
 with only the non-ignored criteria resolved."
   (cl-loop with resolved = (list :matched t)
+           with has-real-match = nil
            for (label criterion) on criteria by #'cddr
            for match = (op-auth-source--match-criterion item label criterion)
            unless match return nil
-           unless (eq match 'skipped)
-           do (setq resolved (plist-put resolved label match))
-           finally return resolved))
+           when (eq match 'wildcard)
+           do (setq has-real-match t)
+           unless (memq match '(skipped wildcard))
+           do (setq resolved (plist-put resolved label match)
+                    has-real-match t)
+           finally return (and has-real-match resolved)))
 
 
 (defun op-auth-source--list-accounts ()
