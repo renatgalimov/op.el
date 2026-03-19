@@ -1,7 +1,7 @@
 ;;; op-auth-source.el --- auth-source backend for 1Password -*- lexical-binding: t; -*-
 
 ;; Author: Renat Galimov
-;; Version: 0.2
+;; Version: 0.3
 ;; Keywords: password, op, 1password, auth-source
 
 ;;; Commentary:
@@ -24,9 +24,6 @@
   "Tag used to filter 1Password items for auth-source."
   :type 'string
   :group 'op)
-
-(defconst op-auth-source-process-timeout-seconds 30
-  "Maximum number of seconds to wait for an `op' CLI subprocess to finish.")
 
 (defcustom op-auth-source-debug nil
   "When non-nil, log auth-source search calls to the *op-auth-source-log* buffer."
@@ -198,16 +195,11 @@ with only the non-ignored criteria resolved."
   "List all 1Password accounts.
 Returns a list of alists with account details.
 Signals an error and pops up stderr if the command fails."
-  (let* ((stderr-file (make-temp-file "op-auth-source-err"))
-         (buf (generate-new-buffer "*op-auth-source-accounts*"))
-         (exit-code (call-process op-executable nil (list buf stderr-file) nil
-                                  "account" "list"
-                                  "--format" "json"))
-         (output (with-current-buffer buf
-                   (prog1 (buffer-string)
-                     (kill-buffer buf)))))
-    (op-auth-source--check-exit exit-code stderr-file
-                                (format "op account list --format json"))
+  (let* ((result (op-run (list "account" "list" "--format" "json")))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr)))
+    (op-auth-source--check-exit exit-code stderr "op account list --format json")
     (append (json-read-from-string output) nil)))
 
 (defun op-auth-source--list-items (account)
@@ -215,17 +207,14 @@ Signals an error and pops up stderr if the command fails."
 ACCOUNT is an account UUID string.
 Returns a JSON string.
 Signals an error and pops up stderr if the command fails."
-  (let* ((stderr-file (make-temp-file "op-auth-source-err"))
-         (buf (generate-new-buffer "*op-auth-source-list*"))
-         (exit-code (call-process op-executable nil (list buf stderr-file) nil
-                                  "--account" account
-                                  "item" "list"
-                                  "--tags" op-auth-source-tag
-                                  "--format" "json"))
-         (output (with-current-buffer buf
-                   (prog1 (buffer-string)
-                     (kill-buffer buf)))))
-    (op-auth-source--check-exit exit-code stderr-file
+  (let* ((result (op-run (list "--account" account
+                               "item" "list"
+                               "--tags" op-auth-source-tag
+                               "--format" "json")))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr)))
+    (op-auth-source--check-exit exit-code stderr
                                 (format "op --account %s item list --tags %s --format json"
                                         account op-auth-source-tag))
     output))
@@ -235,39 +224,16 @@ Signals an error and pops up stderr if the command fails."
 ACCOUNT is the account UUID to use.
 Returns a list of alists with full item details.
 Signals an error and pops up stderr if the command fails."
-  (let* ((stderr-buf (generate-new-buffer "*op-auth-source-get-items-stderr*"))
-         (buf (generate-new-buffer "*op-auth-source-get-items*"))
-         (proc (make-process :name "op-auth-source-get-items"
-                             :buffer buf
-                             :command (list op-executable
-                                            "--account" account
-                                            "item" "get" "-"
-                                            "--format" "json")
-                             :stderr stderr-buf
-                             :connection-type 'pipe
-                             :sentinel #'ignore)))
-    (process-send-string proc items-json)
-    (process-send-eof proc)
-    (while (accept-process-output proc op-auth-source-process-timeout-seconds))
-    (let ((exit-code (process-exit-status proc))
-          (output (with-current-buffer buf
-                    (prog1 (buffer-string)
-                      (kill-buffer buf))))
-          (stderr (with-current-buffer stderr-buf
-                    (prog1 (string-trim (buffer-string))
-                      (kill-buffer stderr-buf))))
-          (command (format "op --account %s item get - --format json" account)))
-      (unless (zerop exit-code)
-        (with-current-buffer (get-buffer-create "*op-error*")
-          (goto-char (point-max))
-          (unless (bobp) (insert "\n\n"))
-          (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ") command "\n")
-          (insert (format "Exit code: %d\n" exit-code))
-          (insert "Stdin:\n" items-json "\n")
-          (insert "Stderr:\n" stderr "\n")
-          (display-buffer (current-buffer)))
-        (error "%s failed (exit %d)" command exit-code))
-      (op-auth-source--parse-json-objects output))))
+  (let* ((result (op-run (list "--account" account
+                               "item" "get" "-"
+                               "--format" "json")
+                         items-json))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr))
+         (command (format "op --account %s item get - --format json" account)))
+    (op-auth-source--check-exit exit-code stderr command items-json)
+    (op-auth-source--parse-json-objects output)))
 
 (defun op-auth-source--parse-json-objects (string)
   "Parse STRING containing one or more concatenated JSON objects.
@@ -327,43 +293,35 @@ Returns the label string, or nil if none match."
 SECRET-LABEL is the field label to retrieve (e.g. \"password\" or \"credential\").
 Returns the trimmed secret string.
 Signals an error and pops up stderr if the command fails."
-  (let* ((stderr-file (make-temp-file "op-auth-source-err"))
-         (buf (generate-new-buffer "*op-auth-source-get*"))
-         (field-arg (format "label=%s" secret-label))
-         (exit-code (call-process op-executable nil (list buf stderr-file) nil
-                                  "--account" account
-                                  "item" "get" item-id
-                                  "--fields" field-arg
-                                  "--reveal"))
-         (output (with-current-buffer buf
-                   (prog1 (string-trim (buffer-string))
-                     (kill-buffer buf)))))
-    (op-auth-source--check-exit exit-code stderr-file
+  (let* ((field-arg (format "label=%s" secret-label))
+         (result (op-run (list "--account" account
+                               "item" "get" item-id
+                               "--fields" field-arg
+                               "--reveal")))
+         (exit-code (plist-get result :exit-code))
+         (output (string-trim (plist-get result :stdout)))
+         (stderr (plist-get result :stderr)))
+    (op-auth-source--check-exit exit-code stderr
                                 (format "op --account %s item get %s --fields %s --reveal"
                                         account item-id field-arg))
     output))
 
-(defun op-auth-source--check-exit (exit-code stderr-file command &optional stdin-data)
-  "Check EXIT-CODE of COMMAND; if non-zero, pop up stderr and signal error.
-STDERR-FILE is the path to the file containing stderr output.
+(defun op-auth-source--check-exit (exit-code stderr command &optional stdin-data)
+  "Check EXIT-CODE of COMMAND; if non-zero, pop up STDERR and signal error.
+STDERR is a string containing the standard error output.
 COMMAND is a string describing the full command invocation for the error message.
 STDIN-DATA, if non-nil, is included in the error buffer for diagnostics."
   (unless (zerop exit-code)
-    (let ((stderr (with-temp-buffer
-                    (insert-file-contents stderr-file)
-                    (string-trim (buffer-string)))))
-      (with-current-buffer (get-buffer-create "*op-error*")
-        (goto-char (point-max))
-        (unless (bobp) (insert "\n\n"))
-        (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ") command "\n")
-        (insert (format "Exit code: %d\n" exit-code))
-        (when stdin-data
-          (insert "Stdin:\n" stdin-data "\n"))
-        (insert "Stderr:\n" stderr "\n")
-        (display-buffer (current-buffer)))
-      (delete-file stderr-file)
-      (error "%s failed (exit %d)" command exit-code)))
-  (delete-file stderr-file))
+    (with-current-buffer (get-buffer-create "*op-error*")
+      (goto-char (point-max))
+      (unless (bobp) (insert "\n\n"))
+      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ") command "\n")
+      (insert (format "Exit code: %d\n" exit-code))
+      (when stdin-data
+        (insert "Stdin:\n" stdin-data "\n"))
+      (insert "Stderr:\n" stderr "\n")
+      (display-buffer (current-buffer)))
+    (error "%s failed (exit %d)" command exit-code)))
 
 (provide 'op-auth-source)
 ;;; op-auth-source.el ends here
