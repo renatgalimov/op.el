@@ -61,30 +61,30 @@
 		  (expect (op-read "op://Op.el/Email/password")
 			  :to-equal "")))))
 
-(describe "op--random-tag"
+(describe "op--generate-random-tag"
 	  (it "should return a 16-character string"
-	      (expect (length (op--random-tag)) :to-equal 16))
+	      (expect (length (op--generate-random-tag)) :to-equal 16))
 
 	  (it "should contain only lowercase alphanumeric characters"
-	      (expect (op--random-tag) :to-match "^[a-z0-9]\\{16\\}$"))
+	      (expect (op--generate-random-tag) :to-match "^[a-z0-9]\\{16\\}$"))
 
 	  (it "should return different values on successive calls"
-	      (expect (op--random-tag) :not :to-equal (op--random-tag))))
+	      (expect (op--generate-random-tag) :not :to-equal (op--generate-random-tag))))
 
-(describe "op--pty-ensure"
+(describe "op--ensure-pty"
 	  (before-each
 	   (when (and op--pty-process (process-live-p op--pty-process))
 	     (delete-process op--pty-process)
 	     (setq op--pty-process nil)))
 
 	  (it "should start a live process"
-	      (op--pty-ensure)
+	      (op--ensure-pty)
 	      (expect (process-live-p op--pty-process) :to-be-truthy))
 
 	  (it "should reuse an existing live process"
-	      (op--pty-ensure)
+	      (op--ensure-pty)
 	      (let ((first-process op--pty-process))
-		(op--pty-ensure)
+		(op--ensure-pty)
 		(expect op--pty-process :to-equal first-process))))
 
 (describe "op-run"
@@ -161,11 +161,11 @@
 		     (leaked-stdin-file nil)
 		     (call-count 0)
 		     (real-process-live-p (symbol-function 'process-live-p)))
-		(op--pty-ensure)
+		(op--ensure-pty)
 		(cl-letf (((symbol-function 'process-live-p)
 			   (lambda (proc)
 			     (cl-incf call-count)
-			     ;; Let op--pty-ensure pass (call 1), error on while loop (call 2+)
+			     ;; Let op--ensure-pty pass (call 1), error on while loop (call 2+)
 			     (if (= call-count 1)
 				 (funcall real-process-live-p proc)
 			       (setq leaked-stdin-file
@@ -182,7 +182,7 @@
 		     (call-count 0)
 		     (real-process-live-p (symbol-function 'process-live-p))
 		     (stderr-files-before (directory-files temporary-file-directory t "op-stderr")))
-		(op--pty-ensure)
+		(op--ensure-pty)
 		(cl-letf (((symbol-function 'process-live-p)
 			   (lambda (proc)
 			     (cl-incf call-count)

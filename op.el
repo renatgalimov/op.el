@@ -91,8 +91,8 @@ You can specify an ACCOUNT to read from a specific 1Password account."
 ARGS is a list of argument strings.  Optional STDIN-DATA is a string
 piped to the command\\='s stdin via a temp file.
 Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
-  (op--pty-ensure)
-  (let ((command-id (op--random-tag)))
+  (op--ensure-pty)
+  (let ((command-id (op--generate-random-tag)))
     (unwind-protect
         (progn
           (setq op--pty-output "")
@@ -101,16 +101,21 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
           (op--parse-pty-output command-id))
       (op--cleanup-temp-files command-id))))
 
-(defun op--random-tag ()
+(defun op--ensure-pty ()
+  "Ensure the PTY shell process is alive, starting it if needed."
+  (unless (and op--pty-process (process-live-p op--pty-process))
+    (op--start-pty)))
+
+(defun op--generate-random-tag ()
   "Generate a random alphanumeric tag for command output markers."
   (let ((chars "abcdefghijklmnopqrstuvwxyz0123456789"))
     (apply #'string (cl-loop repeat 16 collect (aref chars (random (length chars)))))))
 
-(defun op--pty-filter (_process output)
+(defun op--filter-pty (_process output)
   "Accumulate OUTPUT from the PTY process."
   (setq op--pty-output (concat op--pty-output output)))
 
-(defun op--pty-start ()
+(defun op--start-pty ()
   "Start a fresh PTY shell process for op commands."
   (setq op--pty-process
         (make-process
@@ -118,16 +123,13 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
          :buffer (generate-new-buffer " *op-pty*")
          :command (list "bash" "--norc" "--noprofile")
          :connection-type 'pty
-         :filter #'op--pty-filter)
+         :filter #'op--filter-pty)
         op--pty-output "")
   (process-send-string op--pty-process "stty -echo && PS1='' && PS2=''\n")
   (accept-process-output op--pty-process op--pty-startup-timeout-seconds)
   (setq op--pty-output ""))
 
-(defun op--pty-ensure ()
-  "Ensure the PTY shell process is alive, starting it if needed."
-  (unless (and op--pty-process (process-live-p op--pty-process))
-    (op--pty-start)))
+
 
 (defun op--kill-stuck-command ()
   "Try to stop a stuck command on the PTY process.
@@ -149,11 +151,11 @@ does not respond, escalates to SIGKILL and discards the PTY."
            (string-trim (buffer-string)))
     (delete-file path)))
 
-(defun op--stderr-file (command-id)
+(defun op--make-stderr-path (command-id)
   "Return the stderr temp file path for COMMAND-ID."
   (expand-file-name (format "op-stderr-%s" command-id) temporary-file-directory))
 
-(defun op--stdin-file (command-id)
+(defun op--make-stdin-path (command-id)
   "Return the stdin temp file path for COMMAND-ID."
   (expand-file-name (format "op-stdin-%s" command-id) temporary-file-directory))
 
@@ -165,9 +167,9 @@ Optional STDIN-DATA, if non-nil, is written to a temp file and piped as stdin.
 Returns the shell command string."
   (let ((begin-tag (format "__OP_BEGIN_%s__" command-id))
         (end-tag (format "__OP_END_%s__" command-id))
-        (stderr-file (op--stderr-file command-id))
+        (stderr-file (op--make-stderr-path command-id))
         (stdin-file (when stdin-data
-                      (let ((file (op--stdin-file command-id)))
+                      (let ((file (op--make-stdin-path command-id)))
                         (write-region stdin-data nil file nil 'silent)
                         file)))
         (quoted-args (mapconcat #'shell-quote-argument args " ")))
@@ -191,7 +193,7 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
          (begin-pos (when (string-match begin-re op--pty-output)
                       (match-end 0)))
          (end-pos (when (and begin-pos
-                              (string-match end-re op--pty-output begin-pos))
+                             (string-match end-re op--pty-output begin-pos))
                     (match-beginning 0)))
          (exit-code (if end-pos
                         (string-to-number (match-string 1 op--pty-output))
@@ -199,7 +201,7 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
          (stdout (if (and begin-pos end-pos)
                      (substring op--pty-output begin-pos end-pos)
                    ""))
-         (stderr (op--read-and-delete-file (op--stderr-file command-id))))
+         (stderr (op--read-and-delete-file (op--make-stderr-path command-id))))
     (list :exit-code exit-code :stdout stdout :stderr stderr)))
 
 (defun op--wait-for-command (command-id args)
@@ -220,10 +222,10 @@ Signals an error if the command does not complete within `op-command-timeout-sec
 
 (defun op--cleanup-temp-files (command-id)
   "Delete temporary stdin and stderr files for COMMAND-ID if they exist."
-  (when (file-exists-p (op--stdin-file command-id))
-    (delete-file (op--stdin-file command-id)))
-  (when (file-exists-p (op--stderr-file command-id))
-    (delete-file (op--stderr-file command-id))))
+  (when (file-exists-p (op--make-stdin-path command-id))
+    (delete-file (op--make-stdin-path command-id)))
+  (when (file-exists-p (op--make-stderr-path command-id))
+    (delete-file (op--make-stderr-path command-id))))
 
 
 (defun op-read-cache-cleanup (&optional force)
