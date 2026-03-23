@@ -4,62 +4,15 @@
 (load-file "op.el")
 
 (describe "op-read"
-	  (before-each
-	   (setq op-read-cache (make-hash-table :test #'equal)))
-
 	  (it "reads a secret via op executable"
 	      (let ((op-executable (expand-file-name "../bin/op.py"
 						     (file-name-directory load-file-name))))
 		(expect (op-read "op://Op.el/Email/password") :to-equal "comanche-muscular-tabloids-minotaur-ally")))
 
-	  (it "caches result"
+	  (it "returns empty string on error"
 	      (let ((op-executable (expand-file-name "../bin/op.py"
 						     (file-name-directory load-file-name))))
-		(op-read "op://Op.el/Email/password")
-		(expect (gethash "op://Op.el/Email/password" op-read-cache) :not :to-be nil)))
-
-	  (it "does not cache error output"
-	      (let ((op-executable (expand-file-name "../bin/op.py"
-						     (file-name-directory load-file-name))))
-		(op-read "op://Nonexistent/Item/password")
-		(expect (gethash "op://Nonexistent/Item/password" op-read-cache) :to-be nil)))
-
-	  (it "when called twice should use the cached result"
-	      (let ((op-executable (expand-file-name "../bin/op.py"
-						     (file-name-directory load-file-name))))
-		(expect (op-read "op://Op.el/Email/password")
-			:to-equal "comanche-muscular-tabloids-minotaur-ally")
-		;; Second call with broken executable proves cache is used
-		(let ((op-executable "/nonexistent"))
-		  (expect (op-read "op://Op.el/Email/password")
-			  :to-equal "comanche-muscular-tabloids-minotaur-ally")))))
-
-(describe "op-read-cache-cleanup"
-	  (it "when run should remove expired entries"
-	      (let ((op-read-cache (make-hash-table :test 'equal)))
-		(puthash "old" (cons "val" (- (float-time) (* 11 60))) op-read-cache)
-		(puthash "recent" (cons "val" (float-time)) op-read-cache)
-		(op-read-cache-cleanup)
-		(expect (gethash "old" op-read-cache) :to-be nil)
-		(expect (gethash "recent" op-read-cache) :not :to-be nil))))
-
-(describe "op-read-cache-duration"
-	  (it "should allow customizing the cache duration"
-	      (let ((op-read-cache (make-hash-table :test 'equal))
-		    (op-read-cache-duration 1)
-		    (op-executable (expand-file-name "../bin/op.py"
-						     (file-name-directory load-file-name))))
-		(expect (op-read "op://Op.el/Email/password")
-			:to-equal "comanche-muscular-tabloids-minotaur-ally")
-		;; Cache should serve the result even with a broken executable
-		(let ((op-executable "/nonexistent"))
-		  (expect (op-read "op://Op.el/Email/password")
-			  :to-equal "comanche-muscular-tabloids-minotaur-ally"))
-		;; After expiry, cache should not serve stale results
-		(sleep-for 2)
-		(let ((op-executable "/nonexistent"))
-		  (expect (op-read "op://Op.el/Email/password")
-			  :to-equal "")))))
+		(expect (op-read "op://Nonexistent/Item/password") :to-equal ""))))
 
 (describe "op--generate-random-tag"
 	  (it "should return a 16-character string"

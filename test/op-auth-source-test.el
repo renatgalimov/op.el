@@ -34,7 +34,6 @@
   (spy-on 'format-time-string :and-call-fake
 	  (lambda (format-string &optional time zone)
 	    (funcall op-test--real-format-time-string format-string op-test-frozen-time zone)))
-  (setq op-read-cache (make-hash-table :test #'equal))
   (setq op-auth-source-test--orig-sources auth-sources)
   (setq op-auth-source-test--orig-tag op-auth-source-tag)
   (setq op-auth-source-tag "OpElTest")
