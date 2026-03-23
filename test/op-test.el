@@ -125,6 +125,73 @@
 		(op-run (list "read" "op://Op.el/Email/password"))
 		(let ((first-process op--pty-process))
 		  (op-run (list "read" "op://Op.el/Email/password"))
-		  (expect op--pty-process :to-equal first-process)))))
+		  (expect op--pty-process :to-equal first-process))))
+
+	  (it "when command hangs should signal a timeout error"
+	      (let ((op-executable (expand-file-name "../bin/op.py"
+						     (file-name-directory load-file-name)))
+		    (op-command-timeout-seconds 2))
+		(expect (op-run (list "--test-freeze")) :to-throw 'error)))
+
+	  (it "when command hangs should keep the PTY usable for subsequent calls"
+	      (let ((op-executable (expand-file-name "../bin/op.py"
+						     (file-name-directory load-file-name)))
+		    (op-command-timeout-seconds 2))
+		(ignore-errors (op-run (list "--test-freeze")))
+		(let ((result (op-run (list "read" "op://Op.el/Email/password"))))
+		  (expect (plist-get result :exit-code) :to-equal 0)
+		  (expect (string-trim (plist-get result :stdout))
+			  :to-equal "comanche-muscular-tabloids-minotaur-ally"))))
+
+	  (it "when command ignores signals should kill PTY and recover"
+	      (let ((op-executable (expand-file-name "../bin/op.py"
+						     (file-name-directory load-file-name)))
+		    (op-command-timeout-seconds 2))
+		(expect (op-run (list "--test-freeze" "--test-ignore-sigint"))
+			:to-throw 'error)
+		;; PTY should have been killed; next call starts a fresh one
+		(let ((result (op-run (list "read" "op://Op.el/Email/password"))))
+		  (expect (plist-get result :exit-code) :to-equal 0)
+		  (expect (string-trim (plist-get result :stdout))
+			  :to-equal "comanche-muscular-tabloids-minotaur-ally"))))
+
+	  (it "on error should cleanup stdin file"
+	      (let* ((op-executable (expand-file-name "../bin/op.py"
+						      (file-name-directory load-file-name)))
+		     (leaked-stdin-file nil)
+		     (call-count 0)
+		     (real-process-live-p (symbol-function 'process-live-p)))
+		(op--pty-ensure)
+		(cl-letf (((symbol-function 'process-live-p)
+			   (lambda (proc)
+			     (cl-incf call-count)
+			     ;; Let op--pty-ensure pass (call 1), error on while loop (call 2+)
+			     (if (= call-count 1)
+				 (funcall real-process-live-p proc)
+			       (setq leaked-stdin-file
+				     (car (directory-files temporary-file-directory t "op-stdin")))
+			       (error "simulated process-live-p failure")))))
+		  (ignore-errors
+		    (op-run (list "read" "op://Op.el/Email/password") "test-stdin-data")))
+		(expect leaked-stdin-file :not :to-be nil)
+		(expect (file-exists-p leaked-stdin-file) :to-be nil)))
+
+	  (it "on error should cleanup stderr file"
+	      (let* ((op-executable (expand-file-name "../bin/op.py"
+						      (file-name-directory load-file-name)))
+		     (call-count 0)
+		     (real-process-live-p (symbol-function 'process-live-p))
+		     (stderr-files-before (directory-files temporary-file-directory t "op-stderr")))
+		(op--pty-ensure)
+		(cl-letf (((symbol-function 'process-live-p)
+			   (lambda (proc)
+			     (cl-incf call-count)
+			     (if (= call-count 1)
+				 (funcall real-process-live-p proc)
+			       (error "simulated process-live-p failure")))))
+		  (ignore-errors
+		    (op-run (list "read" "op://Op.el/Email/password"))))
+		(let ((stderr-files-after (directory-files temporary-file-directory t "op-stderr")))
+		  (expect stderr-files-after :to-equal stderr-files-before)))))
 
 (provide 'op-test)
