@@ -12,9 +12,10 @@ OP_FIXTURE_DIR - override fixture directory (default: test/fixtures)
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
-import tempfile
+import time
 from pathlib import Path
 
 logging.basicConfig(
@@ -186,10 +187,24 @@ def verify(argv):
         sys.exit(result.returncode)
 
 
+def freeze(ignore_sigint=False):
+    """Sleep forever.  Used to test timeout handling in op-run.
+
+    When IGNORE_SIGINT is True, SIGINT is ignored so the test can verify
+    that SIGKILL escalation works.
+    """
+    if ignore_sigint:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    while True:
+        time.sleep(3600)
+
+
 def main():
     argv = sys.argv[1:]
     log.info("mode=%s argv=%s", MODE, argv)
-    if MODE == "mock":
+    if "--test-freeze" in argv:
+        freeze(ignore_sigint="--test-ignore-sigint" in argv)
+    elif MODE == "mock":
         mock(argv)
     elif MODE == "real":
         real(argv)

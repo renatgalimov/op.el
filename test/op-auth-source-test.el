@@ -34,7 +34,6 @@
   (spy-on 'format-time-string :and-call-fake
 	  (lambda (format-string &optional time zone)
 	    (funcall op-test--real-format-time-string format-string op-test-frozen-time zone)))
-  (setq op-read-cache (make-hash-table :test #'equal))
   (setq op-auth-source-test--orig-sources auth-sources)
   (setq op-auth-source-test--orig-tag op-auth-source-tag)
   (setq op-auth-source-tag "OpElTest")
@@ -186,7 +185,31 @@
 	   (it "when value is a list with symbols should match their string values"
 	       (let ((item '((fields . [((label . "port number") (value . "irc-nickserv"))]))))
 		 (expect (op-auth-source--match-item item '(:port (irc irc-nickserv)))
-			 :to-be-truthy))))
+			 :to-be-truthy)))
+
+	   (it "when all criteria are nil or ignored should return nil"
+	       (let ((item '((fields . [((label . "host") (value . "smtp.gmail.com"))
+					((label . "username") (value . "alice@gmail.com"))
+					((label . "port number") (value . "587"))
+					((label . "password") (value . "secret123"))]))))
+		 (expect (op-auth-source--match-item item '(:host nil :user nil))
+			 :to-be nil)))
+
+	   (it "when criteria is empty should return nil"
+	       (let ((item '((fields . [((label . "host") (value . "smtp.gmail.com"))
+					((label . "username") (value . "alice@gmail.com"))
+					((label . "port number") (value . "587"))
+					((label . "password") (value . "secret123"))]))))
+		 (expect (op-auth-source--match-item item '())
+			 :to-be nil)))
+
+	   (it "when criteria has only ignored keys should return nil"
+	       (let ((item '((fields . [((label . "host") (value . "smtp.gmail.com"))
+					((label . "username") (value . "alice@gmail.com"))
+					((label . "port number") (value . "587"))
+					((label . "password") (value . "secret123"))]))))
+		 (expect (op-auth-source--match-item item '(:backend 1password :type 1password :max 1))
+			 :to-be nil))))
 
  (describe "--parse-json-objects"
 	   (it "when given a JSON array should return a list of alists"

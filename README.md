@@ -10,9 +10,23 @@
 
 # op.el
 
-1Password integration for Emacs
+1Password integration for Emacs.
 
-This repository uses GitHub Actions to run Buttercup tests and verify that all Emacs Lisp files are properly indented. The indentation check can also be run locally via `./scripts/check-indent.sh`.
+- Call `op` from Emacs without repeated authentication prompts
+- Read secrets anywhere via `op-read`
+- Use 1Password as an `auth-source` backend
+
+---
+
+## Why
+
+Using the 1Password CLI (`op`) inside Emacs is annoying:
+
+- It may re-request authentication on every call
+- There's no simple way to fetch secrets inline
+- Emacs packages still expect `.authinfo` or `pass`
+
+This package fixes all of that.
 
 ## auth-source Integration
 
@@ -31,18 +45,25 @@ This adds `1password` to your `auth-sources` list. Emacs will then consult 1Pass
 
 Tag the items you want Emacs to access with `emacs-auth-source` in 1Password. The backend only searches items with this tag.
 
-Each item should have:
-- A **URL** matching the host (e.g., `https://smtp.gmail.com:587`)
-- A **username** in the item's username field
-- A **password** in the item's password field
+Items are matched by their **fields**.  The backend maps each search criterion to one or more field labels:
+
+| Criterion | Matched field labels              |
+|-----------|-----------------------------------|
+| `:host`   | `host`, `server`, `hostname`      |
+| `:user`   | `user`, `username`, `email`       |
+| `:port`   | `port`, `port number`             |
+
+Any other criterion key is matched against a field whose label equals the key name (e.g., `:security` matches a field labeled `security`).
+
+A search must include at least one non-nil criterion; an empty search returns no results.
 
 ### How It Works
 
 When a package searches for credentials (e.g., `:host "smtp.gmail.com" :user "alice@gmail.com" :port 587`), the backend:
 
-1. Runs `op item list --tags emacs-auth-source --format json` to list tagged items
-2. Filters items by matching URLs against the host and port
-3. Matches the username against the item's username field
+1. Runs `op item list --tags emacs-auth-source --format json` to find tagged items
+2. Fetches full item details via `op item get`
+3. Matches each criterion against the item's fields by label
 4. Returns the password via `op item get <id> --fields label=password`
 
 ### Disabling
