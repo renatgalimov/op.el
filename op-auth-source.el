@@ -155,8 +155,8 @@ Logs rejected criteria when debugging is enabled."
                       candidates)
             (progn
               (op--log "item %s rejected: %s=%S not found in fields"
-                                   (or (alist-get 'title item) (alist-get 'id item) "?")
-                                   label criterion)
+                       (or (alist-get 'title item) (alist-get 'id item) "?")
+                       label criterion)
               nil))))))
 
 (defun op-auth-source--match-item (item criteria)
@@ -257,7 +257,7 @@ Each returned item alist has an extra `account_uuid' key."
              (items-json (op-auth-source--list-items account-uuid))
              (items-list (json-read-from-string items-json)))
         (op--log "account %s: %d items from list" account-uuid
-                             (if (vectorp items-list) (length items-list) 0))
+                 (if (vectorp items-list) (length items-list) 0))
         (when (and (vectorp items-list) (> (length items-list) 0))
           (let ((detailed (op-auth-source--get-items items-json account-uuid)))
             (op--log "account %s: %d detailed items" account-uuid (length detailed))
