@@ -54,6 +54,20 @@ and clears the auth-source cache."
   (setq auth-sources (delq '1password auth-sources))
   (auth-source-forget-all-cached))
 
+(defun op-auth-source--make-result (item resolved)
+  "Build an auth-source result plist from ITEM and RESOLVED match.
+ITEM is the full 1Password item alist.  RESOLVED is the plist
+returned by `op-auth-source--match-item' with matched :host, :user, :port."
+  (let ((id (alist-get 'id item))
+        (account-uuid (alist-get 'account_uuid item))
+        (secret-label (or (op-auth-source--find-secret-label item)
+                          "password")))
+    (list :host (or (plist-get resolved :host) "")
+          :user (or (plist-get resolved :user) "")
+          :port (or (plist-get resolved :port) "")
+          :account account-uuid
+          :secret (lambda () (op-auth-source--get-secret id account-uuid secret-label)))))
+
 (cl-defun op-auth-source-search (&rest criteria
                                        &key host user port
                                        (max 1)
@@ -66,26 +80,17 @@ MAX limits the number of results (default 1).  When MAX is 0,
 returns t if any match exists, nil otherwise.
 Returns a list of plists with :host, :user, :port, and :secret."
   (op--log "search called with criteria: %S" criteria)
-  (let ((items (op-auth-source--fetch-items)))
-    (cl-loop for item in items
-             for resolved = (op-auth-source--match-item item criteria)
-             when resolved
-             collect (let ((id (alist-get 'id item))
-                           (account-uuid (alist-get 'account_uuid item))
-                           (secret-label (or (op-auth-source--find-secret-label item)
-                                             "password")))
-                       (list :host (or (plist-get resolved :host) "")
-                             :user (or (plist-get resolved :user) "")
-                             :port (or (plist-get resolved :port) "")
-                             :account account-uuid
-                             :secret (lambda () (op-auth-source--get-secret id account-uuid secret-label))))
-             into results
-             finally return
-             (cond
-              ((null results) nil)
-              ((zerop max) t)
-              ((> (length results) max) (seq-take results max))
-              (t results)))))
+  (cl-loop for item in (op--fetch-items op-auth-source-tag)
+           for resolved = (op-auth-source--match-item item criteria)
+           when resolved
+           collect (op-auth-source--make-result item resolved)
+           into results
+           finally return
+           (cond
+            ((null results) nil)
+            ((zerop max) t)
+            ((> (length results) max) (seq-take results max))
+            (t results))))
 
 (defvar op-auth-source-backend
   (auth-source-backend
@@ -106,7 +111,7 @@ Recognizes the symbol `1password' in `auth-sources'."
     (:port "port" "port number"))
   "Mapping from auth-source keywords to 1Password field label aliases.")
 
-(defun op-auth-source--labels-for-key (key)
+(defun op-auth-source--get-labels-for-key (key)
   "Return list of field labels to search for auth-source KEY.
 Uses `op-auth-source--label-aliases' for well-known keys,
 otherwise uses the keyword name itself (without colon)."
@@ -118,7 +123,7 @@ otherwise uses the keyword name itself (without colon)."
 VALUE is coerced to a string before comparison.
 Comparison is case-insensitive for labels, exact for values."
   (let ((fields (append (alist-get 'fields item) nil))
-        (labels (op-auth-source--labels-for-key label))
+        (labels (op-auth-source--get-labels-for-key label))
         (value (op-auth-source--value-to-string value)))
     (seq-some (lambda (field)
                 (and (member-ignore-case (alist-get 'label field) labels)
@@ -136,28 +141,6 @@ Strings pass through; symbols are converted via `symbol-name'."
    ((stringp value) value)
    ((symbolp value) (symbol-name value))
    (t (format "%s" value))))
-
-(defun op-auth-source--match-criterion (item label criterion)
-  "Return the resolved match value if ITEM matches CRITERION for LABEL, or nil.
-LABEL is a keyword like :host.  Ignored keys return `skipped'.
-A nil CRITERION is treated as absent (returns `skipped').
-A t CRITERION means \"match any value\" and returns `wildcard'.
-When CRITERION is a list, return the first element that matches.
-Logs rejected criteria when debugging is enabled."
-  (cond
-   ((memq label op-auth-source--ignored-keys) 'skipped)
-   ((null criterion) 'skipped)
-   ((eq criterion t) 'wildcard)
-   (t (let ((candidates (if (listp criterion) criterion (list criterion))))
-        (or (seq-some (lambda (candidate)
-                        (when (op-auth-source--field-match-p item label candidate)
-                          candidate))
-                      candidates)
-            (progn
-              (op--log "item %s rejected: %s=%S not found in fields"
-                       (or (alist-get 'title item) (alist-get 'id item) "?")
-                       label criterion)
-              nil))))))
 
 (defun op-auth-source--match-item (item criteria)
   "Return a plist of resolved matches if ITEM matches all CRITERIA, or nil.
@@ -182,88 +165,27 @@ with only the non-ignored criteria resolved."
                     has-real-match t)
            finally return (and has-real-match resolved)))
 
-
-(defun op-auth-source--list-accounts ()
-  "List all 1Password accounts.
-Returns a list of alists with account details.
-Signals an error and pops up stderr if the command fails."
-  (let* ((result (op-run (list "account" "list" "--format" "json")))
-         (exit-code (plist-get result :exit-code))
-         (output (plist-get result :stdout))
-         (stderr (plist-get result :stderr)))
-    (op-auth-source--check-exit exit-code stderr "op account list --format json")
-    (append (json-read-from-string output) nil)))
-
-(defun op-auth-source--list-items (account)
-  "List 1Password item summaries tagged with `op-auth-source-tag' for ACCOUNT.
-ACCOUNT is an account UUID string.
-Returns a JSON string.
-Signals an error and pops up stderr if the command fails."
-  (let* ((result (op-run (list "--account" account
-                               "item" "list"
-                               "--tags" op-auth-source-tag
-                               "--format" "json")))
-         (exit-code (plist-get result :exit-code))
-         (output (plist-get result :stdout))
-         (stderr (plist-get result :stderr)))
-    (op-auth-source--check-exit exit-code stderr
-                                (format "op --account %s item list --tags %s --format json"
-                                        account op-auth-source-tag))
-    output))
-
-(defun op-auth-source--get-items (items-json account)
-  "Get full details for items by passing ITEMS-JSON via a pipe.
-ACCOUNT is the account UUID to use.
-Returns a list of alists with full item details.
-Signals an error and pops up stderr if the command fails."
-  (let* ((result (op-run (list "--account" account
-                               "item" "get" "-"
-                               "--format" "json")
-                         items-json))
-         (exit-code (plist-get result :exit-code))
-         (output (plist-get result :stdout))
-         (stderr (plist-get result :stderr))
-         (command (format "op --account %s item get - --format json" account)))
-    (op-auth-source--check-exit exit-code stderr command items-json)
-    (op-auth-source--parse-json-objects output)))
-
-(defun op-auth-source--parse-json-objects (string)
-  "Parse STRING containing one or more concatenated JSON objects.
-Returns a list of alists.  Handles both a JSON array and
-concatenated top-level objects as output by `op item get'."
-  (with-temp-buffer
-    (insert string)
-    (goto-char (point-min))
-    (let (items)
-      (skip-chars-forward " \t\n\r")
-      (while (not (eobp))
-        (let ((obj (json-read)))
-          (if (vectorp obj)
-              (dolist (el (append obj nil))
-                (push el items))
-            (push obj items)))
-        (skip-chars-forward " \t\n\r"))
-      (nreverse items))))
-
-(defun op-auth-source--fetch-items ()
-  "Fetch full 1Password items tagged with `op-auth-source-tag'.
-Iterates over all accounts, fetching items from each.
-Each returned item alist has an extra `account_uuid' key."
-  (let ((accounts (op-auth-source--list-accounts))
-        (all-items nil))
-    (op--log "found %d accounts" (length accounts))
-    (dolist (account accounts)
-      (let* ((account-uuid (alist-get 'account_uuid account))
-             (items-json (op-auth-source--list-items account-uuid))
-             (items-list (json-read-from-string items-json)))
-        (op--log "account %s: %d items from list" account-uuid
-                 (if (vectorp items-list) (length items-list) 0))
-        (when (and (vectorp items-list) (> (length items-list) 0))
-          (let ((detailed (op-auth-source--get-items items-json account-uuid)))
-            (op--log "account %s: %d detailed items" account-uuid (length detailed))
-            (dolist (item detailed)
-              (push (cons (cons 'account_uuid account-uuid) item) all-items))))))
-    (nreverse all-items)))
+(defun op-auth-source--match-criterion (item label criterion)
+  "Return the resolved match value if ITEM matches CRITERION for LABEL, or nil.
+LABEL is a keyword like :host.  Ignored keys return `skipped'.
+A nil CRITERION is treated as absent (returns `skipped').
+A t CRITERION means \"match any value\" and returns `wildcard'.
+When CRITERION is a list, return the first element that matches.
+Logs rejected criteria when debugging is enabled."
+  (cond
+   ((memq label op-auth-source--ignored-keys) 'skipped)
+   ((null criterion) 'skipped)
+   ((eq criterion t) 'wildcard)
+   (t (let ((candidates (if (listp criterion) criterion (list criterion))))
+        (or (seq-some (lambda (candidate)
+                        (when (op-auth-source--field-match-p item label candidate)
+                          candidate))
+                      candidates)
+            (progn
+              (op--log "item %s rejected: %s=%S not found in fields"
+                       (or (alist-get 'title item) (alist-get 'id item) "?")
+                       label criterion)
+              nil))))))
 
 (defconst op-auth-source--secret-labels '("password" "credential")
   "Field labels to try when fetching the secret from a 1Password item.
@@ -293,27 +215,10 @@ Signals an error and pops up stderr if the command fails."
          (exit-code (plist-get result :exit-code))
          (output (string-trim (plist-get result :stdout)))
          (stderr (plist-get result :stderr)))
-    (op-auth-source--check-exit exit-code stderr
-                                (format "op --account %s item get %s --fields %s --reveal"
-                                        account item-id field-arg))
+    (op--check-exit exit-code stderr
+                    (format "op --account %s item get %s --fields %s --reveal"
+                            account item-id field-arg))
     output))
-
-(defun op-auth-source--check-exit (exit-code stderr command &optional stdin-data)
-  "Check EXIT-CODE of COMMAND; if non-zero, pop up STDERR and signal error.
-STDERR is a string containing the standard error output.
-COMMAND is a string describing the full command invocation for the error message.
-STDIN-DATA, if non-nil, is included in the error buffer for diagnostics."
-  (unless (zerop exit-code)
-    (with-current-buffer (get-buffer-create "*op-error*")
-      (goto-char (point-max))
-      (unless (bobp) (insert "\n\n"))
-      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ") command "\n")
-      (insert (format "Exit code: %d\n" exit-code))
-      (when stdin-data
-        (insert "Stdin:\n" stdin-data "\n"))
-      (insert "Stderr:\n" stderr "\n")
-      (display-buffer (current-buffer)))
-    (error "%s failed (exit %d)" command exit-code)))
 
 (provide 'op-auth-source)
 ;;; op-auth-source.el ends here
