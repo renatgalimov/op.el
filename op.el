@@ -19,6 +19,11 @@
   "1Password integration via the op CLI."
   :group 'applications)
 
+(defcustom op-debug nil
+  "When non-nil, log op operations to the *op-log* buffer."
+  :type 'boolean
+  :group 'op)
+
 (defcustom op-executable "op"
   "Path to the op CLI executable."
   :type 'string
@@ -41,6 +46,16 @@ If the process does not exit within this period, it is killed with SIGKILL.")
 
 (defconst op--pty-startup-timeout-seconds 1
   "Seconds to wait for the PTY shell to initialize after startup.")
+
+(defun op--log (format-string &rest arguments)
+  "Log a message to the *op-log* buffer when `op-debug' is non-nil.
+FORMAT-STRING and ARGUMENTS are passed to `format'."
+  (when op-debug
+    (with-current-buffer (get-buffer-create "*op-log*")
+      (goto-char (point-max))
+      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ")
+              (apply #'format format-string arguments)
+              "\n"))))
 
 ;;; PTY-based process management
 ;;
@@ -69,13 +84,16 @@ ARGS is a list of argument strings.  Optional STDIN-DATA is a string
 piped to the command\\='s stdin via a temp file.
 Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (op--ensure-pty)
+  (op--log "op-run: %s %s" op-executable (mapconcat #'identity args " "))
   (let ((command-id (op--generate-random-tag)))
     (unwind-protect
-        (progn
-          (setq op--pty-output "")
-          (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data))
-          (op--wait-for-command command-id args)
-          (op--parse-pty-output command-id))
+        (let ((result (progn
+                        (setq op--pty-output "")
+                        (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data))
+                        (op--wait-for-command command-id args)
+                        (op--parse-pty-output command-id))))
+          (op--log "op-run: exit-code=%d" (plist-get result :exit-code))
+          result)
       (op--cleanup-temp-files command-id))))
 
 (defun op--ensure-pty ()
@@ -105,8 +123,6 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (process-send-string op--pty-process "stty -echo && PS1='' && PS2=''\n")
   (accept-process-output op--pty-process op--pty-startup-timeout-seconds)
   (setq op--pty-output ""))
-
-
 
 (defun op--kill-stuck-command ()
   "Try to stop a stuck command on the PTY process.

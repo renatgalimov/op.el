@@ -25,20 +25,7 @@
   :type 'string
   :group 'op)
 
-(defcustom op-auth-source-debug nil
-  "When non-nil, log auth-source search calls to the *op-auth-source-log* buffer."
-  :type 'boolean
-  :group 'op)
-
-(defun op-auth-source--log (format-string &rest arguments)
-  "Log a message to the *op-auth-source-log* buffer when debugging is enabled.
-FORMAT-STRING and ARGUMENTS are passed to `format'."
-  (when op-auth-source-debug
-    (with-current-buffer (get-buffer-create "*op-auth-source-log*")
-      (goto-char (point-max))
-      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ")
-              (apply #'format format-string arguments)
-              "\n"))))
+(define-obsolete-variable-alias 'op-auth-source-debug 'op-debug "0.4")
 
 ;;;###autoload
 (defun op-auth-source-enable ()
@@ -78,7 +65,7 @@ BACKEND and TYPE have their standard auth-source meanings.
 MAX limits the number of results (default 1).  When MAX is 0,
 returns t if any match exists, nil otherwise.
 Returns a list of plists with :host, :user, :port, and :secret."
-  (op-auth-source--log "search called with criteria: %S" criteria)
+  (op--log "search called with criteria: %S" criteria)
   (let ((items (op-auth-source--fetch-items)))
     (cl-loop for item in items
              for resolved = (op-auth-source--match-item item criteria)
@@ -167,7 +154,7 @@ Logs rejected criteria when debugging is enabled."
                           candidate))
                       candidates)
             (progn
-              (op-auth-source--log "item %s rejected: %s=%S not found in fields"
+              (op--log "item %s rejected: %s=%S not found in fields"
                                    (or (alist-get 'title item) (alist-get 'id item) "?")
                                    label criterion)
               nil))))))
@@ -264,16 +251,16 @@ Iterates over all accounts, fetching items from each.
 Each returned item alist has an extra `account_uuid' key."
   (let ((accounts (op-auth-source--list-accounts))
         (all-items nil))
-    (op-auth-source--log "found %d accounts" (length accounts))
+    (op--log "found %d accounts" (length accounts))
     (dolist (account accounts)
       (let* ((account-uuid (alist-get 'account_uuid account))
              (items-json (op-auth-source--list-items account-uuid))
              (items-list (json-read-from-string items-json)))
-        (op-auth-source--log "account %s: %d items from list" account-uuid
+        (op--log "account %s: %d items from list" account-uuid
                              (if (vectorp items-list) (length items-list) 0))
         (when (and (vectorp items-list) (> (length items-list) 0))
           (let ((detailed (op-auth-source--get-items items-json account-uuid)))
-            (op-auth-source--log "account %s: %d detailed items" account-uuid (length detailed))
+            (op--log "account %s: %d detailed items" account-uuid (length detailed))
             (dolist (item detailed)
               (push (cons (cons 'account_uuid account-uuid) item) all-items))))))
     (nreverse all-items)))
