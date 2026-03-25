@@ -28,6 +28,35 @@ Using the 1Password CLI (`op`) inside Emacs is annoying:
 
 This package fixes all of that.
 
+## Installation
+
+Requires Emacs 29.1+ and the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`op`).
+
+### use-package (with vc)
+
+```elisp
+(use-package op
+  :vc (:url "https://github.com/renatgalimov/op.el" :branch "main"))
+```
+
+### use-package (with vc) + auth-source
+
+```elisp
+(use-package op-auth-source
+  :vc (:url "https://github.com/renatgalimov/op.el" :branch "main")
+  :config
+  (op-auth-source-enable))
+```
+
+### Manual
+
+Clone the repository and add it to your `load-path`:
+
+```elisp
+(add-to-list 'load-path "/path/to/op.el")
+(require 'op)
+```
+
 ## auth-source Integration
 
 The `op-auth-source` package provides an [auth-source](https://www.gnu.org/software/emacs/manual/html_mono/auth.html) backend so that Emacs packages like smtpmail, Gnus, ERC, and others can fetch credentials from 1Password automatically.
