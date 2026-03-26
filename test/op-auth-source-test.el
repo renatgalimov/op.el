@@ -50,19 +50,19 @@
 
  (describe "--labels-for-key"
 	   (it "when given :host should return host aliases"
-	       (expect (op-auth-source--labels-for-key :host)
+	       (expect (op-auth-source--get-labels-for-key :host)
 		       :to-equal '("host" "server" "hostname")))
 
 	   (it "when given :user should return user aliases"
-	       (expect (op-auth-source--labels-for-key :user)
+	       (expect (op-auth-source--get-labels-for-key :user)
 		       :to-equal '("user" "username" "email")))
 
 	   (it "when given :port should return port aliases"
-	       (expect (op-auth-source--labels-for-key :port)
+	       (expect (op-auth-source--get-labels-for-key :port)
 		       :to-equal '("port" "port number")))
 
 	   (it "when given an unknown key should return the key name without colon"
-	       (expect (op-auth-source--labels-for-key :credential)
+	       (expect (op-auth-source--get-labels-for-key :credential)
 		       :to-equal '("credential"))))
 
  (describe "--field-match-p"
@@ -98,7 +98,7 @@
 
  (describe "--list-accounts"
 	   (it "when called via op.py should return a list of account alists"
-	       (expect (op-auth-source--list-accounts)
+	       (expect (op--list-accounts)
 		       :to-equal
 		       '(((account_uuid . "WRYZIV66ZGZOUUQR3SKXFQ753Q")
 			  (email . "akparb9@igassa15.co")
@@ -112,7 +112,7 @@
  (describe "--list-items"
 	   (it "when op fails should signal an error and pop up *op-error* buffer"
 	       (let ((op-auth-source-tag "OpElFail"))
-		 (expect (op-auth-source--list-items "PXCTHFHEUXV4KPI5J63KDYOBO5")
+		 (expect (op--list-items "PXCTHFHEUXV4KPI5J63KDYOBO5" op-auth-source-tag)
 			 :to-throw 'error '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item list --tags OpElFail --format json failed (exit 1)"))
 		 (expect (get-buffer "*op-error*") :not :to-be nil)
 		 (expect (with-current-buffer "*op-error*" (buffer-string))
@@ -213,19 +213,19 @@
 
  (describe "--parse-json-objects"
 	   (it "when given a JSON array should return a list of alists"
-	       (expect (op-auth-source--parse-json-objects "[{\"id\":\"a\"},{\"id\":\"b\"}]")
+	       (expect (op--parse-json-objects "[{\"id\":\"a\"},{\"id\":\"b\"}]")
 		       :to-equal '(((id . "a")) ((id . "b")))))
 
 	   (it "when given concatenated JSON objects should return a list of alists"
-	       (expect (op-auth-source--parse-json-objects "{\"id\":\"a\"}\n{\"id\":\"b\"}")
+	       (expect (op--parse-json-objects "{\"id\":\"a\"}\n{\"id\":\"b\"}")
 		       :to-equal '(((id . "a")) ((id . "b")))))
 
 	   (it "when given a single JSON object should return a one-element list"
-	       (expect (op-auth-source--parse-json-objects "{\"id\":\"a\"}")
+	       (expect (op--parse-json-objects "{\"id\":\"a\"}")
 		       :to-equal '(((id . "a")))))
 
 	   (it "when given invalid JSON should signal an error"
-	       (expect (op-auth-source--parse-json-objects "not json at all")
+	       (expect (op--parse-json-objects "not json at all")
 		       :to-throw 'json-error)))
 
  (describe "--find-secret-label"

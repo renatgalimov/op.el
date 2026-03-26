@@ -1,8 +1,28 @@
 ;;; op.el --- 1Password interaction via op command -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2024-2026 Renat Galimov
+
 ;; Author: Renat Galimov
+;; Maintainer: Renat Galimov
 ;; Version: 0.3
+;; Package-Requires: ((emacs "29.1"))
+;; URL: https://github.com/renatgalimov/op.el
 ;; Keywords: password, op, 1password
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -18,6 +38,11 @@
 (defgroup op nil
   "1Password integration via the op CLI."
   :group 'applications)
+
+(defcustom op-debug nil
+  "When non-nil, log op operations to the *op-log* buffer."
+  :type 'boolean
+  :group 'op)
 
 (defcustom op-executable "op"
   "Path to the op CLI executable."
@@ -42,6 +67,16 @@ If the process does not exit within this period, it is killed with SIGKILL.")
 (defconst op--pty-startup-timeout-seconds 1
   "Seconds to wait for the PTY shell to initialize after startup.")
 
+(defun op--log (format-string &rest arguments)
+  "Log a message to the *op-log* buffer when `op-debug' is non-nil.
+FORMAT-STRING and ARGUMENTS are passed to `format'."
+  (when op-debug
+    (with-current-buffer (get-buffer-create "*op-log*")
+      (goto-char (point-max))
+      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ")
+              (apply #'format format-string arguments)
+              "\n"))))
+
 ;;; PTY-based process management
 ;;
 ;; 1Password CLI caches biometric sessions per terminal.  Running all
@@ -63,19 +98,122 @@ You can specify an ACCOUNT to read from a specific 1Password account."
          (result (op-run args)))
     (string-trim (plist-get result :stdout))))
 
+(defun op--fetch-items (tag)
+  "Fetch full 1Password items tagged with TAG.
+Iterates over all accounts, fetching items from each.
+Each returned item alist has an extra `account_uuid' key."
+  (let ((accounts (op--list-accounts))
+        (all-items nil))
+    (op--log "found %d accounts" (length accounts))
+    (dolist (account accounts)
+      (let* ((account-uuid (alist-get 'account_uuid account))
+             (items-json (op--list-items account-uuid tag))
+             (items-list (json-read-from-string items-json)))
+        (op--log "account %s: %d items from list" account-uuid
+                 (if (vectorp items-list) (length items-list) 0))
+        (when (and (vectorp items-list) (> (length items-list) 0))
+          (let ((detailed (op--get-items items-json account-uuid)))
+            (op--log "account %s: %d detailed items" account-uuid (length detailed))
+            (dolist (item detailed)
+              (push (cons (cons 'account_uuid account-uuid) item) all-items))))))
+    (nreverse all-items)))
+
+(defun op--list-accounts ()
+  "List all 1Password accounts.
+Returns a list of alists with account details.
+Signals an error and pops up stderr if the command fails."
+  (let* ((result (op-run (list "account" "list" "--format" "json")))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr)))
+    (op--check-exit exit-code stderr "op account list --format json")
+    (append (json-read-from-string output) nil)))
+
+(defun op--list-items (account tag)
+  "List 1Password item summaries tagged with TAG for ACCOUNT.
+ACCOUNT is an account UUID string.
+TAG is the tag string to filter items by.
+Returns a JSON string.
+Signals an error and pops up stderr if the command fails."
+  (let* ((result (op-run (list "--account" account
+                               "item" "list"
+                               "--tags" tag
+                               "--format" "json")))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr)))
+    (op--check-exit exit-code stderr
+                    (format "op --account %s item list --tags %s --format json"
+                            account tag))
+    output))
+
+(defun op--get-items (items-json account)
+  "Get full details for items by passing ITEMS-JSON via a pipe.
+ACCOUNT is the account UUID to use.
+Returns a list of alists with full item details.
+Signals an error and pops up stderr if the command fails."
+  (let* ((result (op-run (list "--account" account
+                               "item" "get" "-"
+                               "--format" "json")
+                         items-json))
+         (exit-code (plist-get result :exit-code))
+         (output (plist-get result :stdout))
+         (stderr (plist-get result :stderr))
+         (command (format "op --account %s item get - --format json" account)))
+    (op--check-exit exit-code stderr command items-json)
+    (op--parse-json-objects output)))
+
+(defun op--parse-json-objects (string)
+  "Parse STRING containing one or more concatenated JSON objects.
+Returns a list of alists.  Handles both a JSON array and
+concatenated top-level objects as output by `op item get'."
+  (with-temp-buffer
+    (insert string)
+    (goto-char (point-min))
+    (let (items)
+      (skip-chars-forward " \t\n\r")
+      (while (not (eobp))
+        (let ((obj (json-read)))
+          (if (vectorp obj)
+              (dolist (element (append obj nil))
+                (push element items))
+            (push obj items)))
+        (skip-chars-forward " \t\n\r"))
+      (nreverse items))))
+
+(defun op--check-exit (exit-code stderr command &optional stdin-data)
+  "Check EXIT-CODE of COMMAND; if non-zero, pop up STDERR and signal error.
+STDERR is a string containing the standard error output.
+COMMAND is a string describing the full command invocation for the error message.
+STDIN-DATA, if non-nil, is included in the error buffer for diagnostics."
+  (unless (zerop exit-code)
+    (with-current-buffer (get-buffer-create "*op-error*")
+      (goto-char (point-max))
+      (unless (bobp) (insert "\n\n"))
+      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] ") command "\n")
+      (insert (format "Exit code: %d\n" exit-code))
+      (when stdin-data
+        (insert "Stdin:\n" stdin-data "\n"))
+      (insert "Stderr:\n" stderr "\n")
+      (display-buffer (current-buffer)))
+    (error "%s failed (exit %d)" command exit-code)))
+
 (defun op-run (args &optional stdin-data)
   "Run the op CLI with ARGS through a persistent PTY shell.
 ARGS is a list of argument strings.  Optional STDIN-DATA is a string
 piped to the command\\='s stdin via a temp file.
 Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (op--ensure-pty)
+  (op--log "op-run: %s %s" op-executable (mapconcat #'identity args " "))
   (let ((command-id (op--generate-random-tag)))
     (unwind-protect
-        (progn
-          (setq op--pty-output "")
-          (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data))
-          (op--wait-for-command command-id args)
-          (op--parse-pty-output command-id))
+        (let ((result (progn
+                        (setq op--pty-output "")
+                        (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data))
+                        (op--wait-for-command command-id args)
+                        (op--parse-pty-output command-id))))
+          (op--log "op-run: exit-code=%d" (plist-get result :exit-code))
+          result)
       (op--cleanup-temp-files command-id))))
 
 (defun op--ensure-pty ()
@@ -105,8 +243,6 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (process-send-string op--pty-process "stty -echo && PS1='' && PS2=''\n")
   (accept-process-output op--pty-process op--pty-startup-timeout-seconds)
   (setq op--pty-output ""))
-
-
 
 (defun op--kill-stuck-command ()
   "Try to stop a stuck command on the PTY process.
