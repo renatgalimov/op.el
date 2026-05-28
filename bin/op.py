@@ -121,6 +121,38 @@ def fixture_path(argv):
             name += f"-{extra}"
         return FIXTURE_DIR / f"{account_prefix}{name}.{ext}", stdin_data
 
+    if cmd == "vault/list":
+        suffix = args_to_suffix(rest)
+        name = "vault-list"
+        if suffix:
+            name += f"-{suffix}"
+        return FIXTURE_DIR / f"{account_prefix}{name}.json", stdin_data
+
+    if cmd == "item/create":
+        if "-" not in rest:
+            print(
+                "item create: only stdin templates are supported in mock mode (use `-`)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        stdin_data = sys.stdin.read()
+        template = json.loads(stdin_data)
+        title = template.get("title", "")
+        vault = None
+        it = iter(rest)
+        for arg in it:
+            if arg == "--vault":
+                vault = next(it, None)
+            elif arg.startswith("--vault="):
+                vault = arg.split("=", 1)[1]
+        parts = ["item-create"]
+        if vault:
+            parts.append(vault)
+        if title:
+            parts.append(title)
+        name = "-".join(parts)
+        return FIXTURE_DIR / f"{account_prefix}{name}.json", stdin_data
+
     if cmd.startswith("read/"):
         ref = args[1] if len(args) > 1 else None
         if not ref:

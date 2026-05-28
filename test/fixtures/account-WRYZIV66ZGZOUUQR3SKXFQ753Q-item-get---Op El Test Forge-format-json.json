@@ -8,10 +8,10 @@
     "name": "Employee"
   },
   "category": "LOGIN",
-  "last_edited_by": "IAH6DN35JBCRLIS57PQOMZYK6Y",
+  "last_edited_by": "WRYZIV66ZGZOUUQR3SKXFQ753Q",
   "created_at": "2026-03-15T03:45:00Z",
   "updated_at": "2026-03-15T03:45:00Z",
-  "additional_information": "rgalimov^forge",
+  "additional_information": "jondoe^forge",
   "sections": [
     {
       "id": "add more"
@@ -23,7 +23,7 @@
       "type": "STRING",
       "purpose": "USERNAME",
       "label": "username",
-      "value": "rgalimov^forge",
+      "value": "jondoe^forge",
       "reference": "op://Employee/Op El Test Forge/username"
     },
     {

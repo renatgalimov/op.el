@@ -89,7 +89,7 @@ returned by `op-auth-source--match-item' with matched :host, :user, :port."
           :secret (lambda () (op-auth-source--get-secret id account-uuid secret-label)))))
 
 (cl-defun op-auth-source-search (&rest criteria
-                                       &key host user port
+                                       &key backend create
                                        (max 1)
                                        &allow-other-keys)
   "Search 1Password for credentials matching CRITERIA.
@@ -98,25 +98,151 @@ pair is matched against item fields by label.
 BACKEND and TYPE have their standard auth-source meanings.
 MAX limits the number of results (default 1).  When MAX is 0,
 returns t if any match exists, nil otherwise.
+When CREATE is non-nil and no items match, dispatches to BACKEND's
+`create-function' so the user can persist a new credential.
 Returns a list of plists with :host, :user, :port, and :secret."
   (op--log "search called with criteria: %S" criteria)
-  (cl-loop for item in (op--fetch-items op-auth-source-tag)
-           for resolved = (op-auth-source--match-item item criteria)
-           when resolved
-           collect (op-auth-source--make-result item resolved)
-           into results
-           finally return
-           (cond
-            ((null results) nil)
-            ((zerop max) t)
-            ((> (length results) max) (seq-take results max))
-            (t results))))
+  (or (cl-loop for item in (op--fetch-items op-auth-source-tag)
+               for resolved = (op-auth-source--match-item item criteria)
+               when resolved
+               collect (op-auth-source--make-result item resolved)
+               into results
+               finally return
+               (cond
+                ((null results) nil)
+                ((zerop max) t)
+                ((> (length results) max) (seq-take results max))
+                (t results)))
+      (and create backend
+           (apply (slot-value backend 'create-function) criteria))))
+
+(cl-defun op-auth-source-create (&rest spec
+                                       &key backend create
+                                       &allow-other-keys)
+  "Create a 1Password item to satisfy auth-source's `:create' request.
+Prompts for any missing required fields and returns a one-element list
+with a result plist whose `:save-function' runs `op item create'."
+  (ignore backend)
+  (let* ((account (op-auth-source--resolve-account))
+         (vault (op-auth-source--resolve-vault account))
+         (fields (op-auth-source--prompt-fields spec create)))
+    (list (list :host (plist-get fields :host)
+                :user (plist-get fields :user)
+                :port (plist-get fields :port)
+                :account account
+                :secret (lambda () (plist-get fields :secret))
+                :save-function (lambda ()
+                                 (op-auth-source--save-item account vault fields))))))
+
+(defun op-auth-source--save-item (account vault fields)
+  "Persist a new 1Password Login item.
+FIELDS is the plist returned by `op-auth-source--prompt-fields'.
+Builds a JSON template tagged with `op-auth-source-tag' and pipes it
+to `op --account ACCOUNT item create --vault VAULT'.  Returns the
+parsed item alist on success.  Signals an error and pops up
+`*op-error*' on failure."
+  (let* ((template (op-auth-source--build-template
+                    op-auth-source-tag
+                    (plist-get fields :host)
+                    (plist-get fields :user)
+                    (plist-get fields :port)
+                    (plist-get fields :secret)))
+         (result (op-run (list "--account" account
+                               "item" "create"
+                               "--vault" vault
+                               "--format" "json"
+                               "-")
+                         template)))
+    (op--check-exit (plist-get result :exit-code)
+                    (plist-get result :stderr)
+                    (format "op --account %s item create --vault %s --format json -"
+                            account vault)
+                    template)
+    (json-read-from-string (plist-get result :stdout))))
+
+(defun op-auth-source--resolve-account ()
+  "Pick a 1Password account UUID, prompting only if there are multiple."
+  (let ((accounts (op--list-accounts)))
+    (cond
+     ((null accounts) (error "No 1Password accounts available"))
+     ((null (cdr accounts)) (alist-get 'account_uuid (car accounts)))
+     (t (op-auth-source--prompt-account accounts)))))
+
+(defun op-auth-source--prompt-account (accounts)
+  "Prompt the user to choose from ACCOUNTS, returning the chosen UUID."
+  (let ((choices (mapcar (lambda (account)
+                           (cons (or (alist-get 'email account)
+                                     (alist-get 'account_uuid account))
+                                 (alist-get 'account_uuid account)))
+                         accounts)))
+    (cdr (assoc (completing-read "1Password account: " choices nil t) choices))))
+
+(defun op-auth-source--resolve-vault (account)
+  "Prompt the user to choose a vault from ACCOUNT, returning the vault name."
+  (let ((names (mapcar (lambda (vault) (alist-get 'name vault))
+                       (op-auth-source--list-vaults account))))
+    (when (null names)
+      (error "No 1Password vaults available for account %s" account))
+    (completing-read "1Password vault: " names nil t)))
+
+(defun op-auth-source--list-vaults (account)
+  "List 1Password vaults visible to ACCOUNT.
+Returns a list of alists with vault details.
+Signals an error and pops up `*op-error*' on failure."
+  (let ((result (op-run (list "--account" account
+                              "vault" "list"
+                              "--format" "json"))))
+    (op--check-exit (plist-get result :exit-code)
+                    (plist-get result :stderr)
+                    (format "op --account %s vault list --format json" account))
+    (append (json-read-from-string (plist-get result :stdout)) nil)))
+
+(defun op-auth-source--prompt-fields (spec create)
+  "Resolve required fields, prompting for any missing values.
+SPEC is the auth-source create spec.  CREATE may be t or a list of
+extra field symbols to require beyond `(host user port secret)'.
+Returns a plist with `:host', `:user', `:port', `:secret', plus any extras."
+  (let ((resolved nil))
+    (dolist (field (append '(host user port secret)
+                           (and (consp create) create)))
+      (setq resolved
+            (plist-put resolved
+                       (intern (concat ":" (symbol-name field)))
+                       (op-auth-source--resolve-field field spec resolved))))
+    resolved))
+
+(defun op-auth-source--resolve-field (field spec resolved)
+  "Resolve one FIELD from SPEC, falling back to a prompt.
+RESOLVED is the partial plist of fields collected so far, used to
+provide context to the prompt."
+  (let ((provided (plist-get spec (intern (concat ":" (symbol-name field))))))
+    (if (and provided (not (eq provided t)))
+        (op-auth-source--value-to-string provided)
+      (op-auth-source--prompt-for-field field resolved))))
+
+(defun op-auth-source--prompt-for-field (field resolved)
+  "Prompt the user for FIELD, given the partially RESOLVED plist.
+Uses `read-passwd' for `secret' and `read-string' for everything else.
+Signals an error if FIELD is not one of the recognized fields."
+  (cl-case field
+    (secret (read-passwd (format "1Password password for %s@%s: "
+                                 (or (plist-get resolved :user) "")
+                                 (or (plist-get resolved :host) ""))))
+    (user   (read-string (format "1Password username for %s: "
+                                 (or (plist-get resolved :host) ""))
+                         nil nil (user-login-name)))
+    (host   (read-string "1Password host: "))
+    (port   (read-string (format "1Password port for %s@%s (empty for none): "
+                                 (or (plist-get resolved :user) "")
+                                 (or (plist-get resolved :host) ""))))
+    (t      (error "op-auth-source: cannot prompt for unknown field `%s'" field))))
 
 (defvar op-auth-source-backend
   (auth-source-backend
    :source "1password"
    :type '1password
-   :search-function #'op-auth-source-search)
+   :search-function #'op-auth-source-search
+   :create-function #'op-auth-source-create)
   "Auth-source backend for 1Password.")
 
 (defun op-auth-source-backend-parse (entry)
@@ -221,6 +347,27 @@ Returns the label string, or nil if none match."
                 (and (member-ignore-case secret-label field-labels)
                      secret-label))
               op-auth-source--secret-labels)))
+
+(defun op-auth-source--build-template (tag host user port secret)
+  "Build a 1Password Login item JSON template string.
+TAG, HOST, USER and SECRET are required strings.  PORT is included
+as a custom field only when it is a non-empty string."
+  (let* ((base-fields
+          (list `((id . "username") (type . "STRING") (purpose . "USERNAME")
+                  (label . "username") (value . ,user))
+                `((id . "password") (type . "CONCEALED") (purpose . "PASSWORD")
+                  (label . "password") (value . ,secret))
+                `((id . "host") (type . "STRING")
+                  (label . "host") (value . ,host))))
+         (port-field (and port (not (string-empty-p port))
+                          (list `((id . "port") (type . "STRING")
+                                  (label . "port") (value . ,port)))))
+         (fields (vconcat base-fields port-field)))
+    (json-encode
+     `((title . ,host)
+       (category . "LOGIN")
+       (tags . ,(vector tag))
+       (fields . ,fields)))))
 
 (defun op-auth-source--get-secret (item-id account secret-label)
   "Fetch the SECRET-LABEL field for 1Password item ITEM-ID in ACCOUNT.
