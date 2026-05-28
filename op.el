@@ -240,7 +240,7 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
          :connection-type 'pty
          :filter #'op--filter-pty)
         op--pty-output "")
-  (process-send-string op--pty-process "stty -echo && PS1='' && PS2=''\n")
+  (process-send-string op--pty-process "stty -echo && PS1='' && PS2='' && set -o pipefail\n")
   (accept-process-output op--pty-process op--pty-startup-timeout-seconds)
   (setq op--pty-output ""))
 
@@ -277,6 +277,10 @@ does not respond, escalates to SIGKILL and discards the PTY."
 COMMAND-ID is a unique tag used to delimit output.
 ARGS is a list of argument strings for the op executable.
 Optional STDIN-DATA, if non-nil, is written to a temp file and piped as stdin.
+The op CLI requires stdin to be a real pipe when item id is `-', so the
+shell command pipes the temp file through `cat' rather than using `<file'
+redirection.  Combined with `pipefail' set in `op--start-pty', the exit
+code reflects op's failure (not cat's success).
 Returns the shell command string."
   (let ((begin-tag (format "__OP_BEGIN_%s__" command-id))
         (end-tag (format "__OP_END_%s__" command-id))
@@ -286,13 +290,13 @@ Returns the shell command string."
                         (write-region stdin-data nil file nil 'silent)
                         file)))
         (quoted-args (mapconcat #'shell-quote-argument args " ")))
-    (format "printf '\\n%s\\n' && %s %s%s 2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
+    (format "printf '\\n%s\\n' && %s%s %s 2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
             begin-tag
+            (if stdin-file
+                (format "cat %s | " (shell-quote-argument stdin-file))
+              "")
             (shell-quote-argument op-executable)
             quoted-args
-            (if stdin-file
-                (format " <%s" (shell-quote-argument stdin-file))
-              "")
             (shell-quote-argument stderr-file)
             end-tag)))
 

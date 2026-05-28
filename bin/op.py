@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -103,6 +104,13 @@ def fixture_path(argv):
         extra = args_to_suffix(rest[1:])
         ext = "json" if "--format" in args and "json" in args else "txt"
         if item_id == "-":
+            if not stat.S_ISFIFO(os.fstat(sys.stdin.fileno()).st_mode):
+                # Mimics real op: stdin must be a pipe when item id is '-'.
+                print(
+                    '[ERROR] "-" isn\'t an item. Specify the item with its UUID, name, or domain.',
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             stdin_data = sys.stdin.read()
             items = json.loads(stdin_data)
             titles = ",".join(sorted(i["title"] for i in items))
