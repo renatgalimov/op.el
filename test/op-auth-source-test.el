@@ -490,7 +490,20 @@
 				  :backend op-auth-source-backend))))
 		 (expect (funcall (plist-get entry :save-function))
 			 :to-throw 'error
-			 '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item create --vault Op.el --format json - failed (exit 1)")))))
+			 '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item create --vault Op.el --format json - failed (exit 1)"))))
+
+	   (it "when save-function fails should not write the cleartext password into *op-error*"
+	       (let ((entry (car (op-auth-source-create
+				  :host "create-fail.example.com"
+				  :user "alice@example.com"
+				  :port "443"
+				  :secret "topsecret"
+				  :create t
+				  :backend op-auth-source-backend))))
+		 (ignore-errors (funcall (plist-get entry :save-function)))
+		 (with-current-buffer "*op-error*"
+		   (expect (buffer-string) :not :to-match "topsecret")
+		   (expect (buffer-string) :to-match "<redacted>")))))
 
  (describe "backend-parse"
 	   (it "when given 1password symbol should return a backend"

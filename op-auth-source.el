@@ -134,6 +134,9 @@ with a result plist whose `:save-function' runs `op item create'."
                 :save-function (lambda ()
                                  (op-auth-source--save-item account vault fields))))))
 
+(defconst op-auth-source--redacted-secret "<redacted>"
+  "Placeholder substituted for the password in `*op-error*' diagnostics.")
+
 (defun op-auth-source--save-item (account vault fields)
   "Persist a new 1Password Login item.
 FIELDS is the plist returned by `op-auth-source--prompt-fields'.
@@ -157,7 +160,14 @@ parsed item alist on success.  Signals an error and pops up
                     (plist-get result :stderr)
                     (format "op --account %s item create --vault %s --format json -"
                             account vault)
-                    template)
+                    ;; Pass a redacted template so a failed create never writes
+                    ;; the cleartext password into the `*op-error*' buffer.
+                    (op-auth-source--build-template
+                     op-auth-source-tag
+                     (plist-get fields :host)
+                     (plist-get fields :user)
+                     (plist-get fields :port)
+                     op-auth-source--redacted-secret))
     (json-read-from-string (plist-get result :stdout))))
 
 (defun op-auth-source--resolve-account ()
