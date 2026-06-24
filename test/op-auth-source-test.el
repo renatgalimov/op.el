@@ -289,7 +289,27 @@
 			nil
 			"topsecret")
 		       :to-equal
-		       "{\"title\":\"imap.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"bob@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"imap.example.com\"}]}")))
+		       "{\"title\":\"imap.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"bob@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"imap.example.com\"}]}"))
+
+	   (it "when given extra fields should append them as string fields after the base fields"
+	       (expect (op-auth-source--build-template
+			"emacs-auth-source"
+			"smtp.example.com"
+			"alice@example.com"
+			"587"
+			"p@ss"
+			'(:description "primary mail"))
+		       :to-equal
+		       "{\"title\":\"smtp.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"alice@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"p@ss\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"smtp.example.com\"},{\"id\":\"port\",\"type\":\"STRING\",\"label\":\"port\",\"value\":\"587\"},{\"id\":\"description\",\"type\":\"STRING\",\"label\":\"description\",\"value\":\"primary mail\"}]}")))
+
+ (describe "--extra-fields"
+	   (it "when fields include keys beyond the base set should return only the extras"
+	       (expect (op-auth-source--extra-fields '(:host "h" :user "u" :port "587" :secret "s" :description "primary mail"))
+		       :to-equal '(:description "primary mail")))
+
+	   (it "when fields contain only base keys should return nil"
+	       (expect (op-auth-source--extra-fields '(:host "h" :user "u" :port "587" :secret "s"))
+		       :to-be nil)))
 
  (describe "--get-secret"
 	   (it "when called via op.py should return the password"

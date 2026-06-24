@@ -144,12 +144,14 @@ Builds a JSON template tagged with `op-auth-source-tag' and pipes it
 to `op --account ACCOUNT item create --vault VAULT'.  Returns the
 parsed item alist on success.  Signals an error and pops up
 `*op-error*' on failure."
-  (let* ((template (op-auth-source--build-template
+  (let* ((extras (op-auth-source--extra-fields fields))
+         (template (op-auth-source--build-template
                     op-auth-source-tag
                     (plist-get fields :host)
                     (plist-get fields :user)
                     (plist-get fields :port)
-                    (plist-get fields :secret)))
+                    (plist-get fields :secret)
+                    extras))
          (result (op-run (list "--account" account
                                "item" "create"
                                "--vault" vault
@@ -167,8 +169,18 @@ parsed item alist on success.  Signals an error and pops up
                      (plist-get fields :host)
                      (plist-get fields :user)
                      (plist-get fields :port)
-                     op-auth-source--redacted-secret))
+                     op-auth-source--redacted-secret
+                     extras))
     (json-read-from-string (plist-get result :stdout))))
+
+(defun op-auth-source--extra-fields (fields)
+  "Return the entries of FIELDS beyond the base host/user/port/secret keys.
+FIELDS is the plist from `op-auth-source--prompt-fields'.  Returns a plist
+of the extra (KEYWORD VALUE ...) pairs requested via auth-source's `:create'
+list, in their original order."
+  (cl-loop for (key value) on fields by #'cddr
+           unless (memq key '(:host :user :port :secret))
+           append (list key value)))
 
 (defun op-auth-source--resolve-account ()
   "Pick a 1Password account UUID, prompting only if there are multiple."
@@ -360,10 +372,12 @@ Returns the label string, or nil if none match."
                      secret-label))
               op-auth-source--secret-labels)))
 
-(defun op-auth-source--build-template (tag host user port secret)
+(defun op-auth-source--build-template (tag host user port secret &optional extras)
   "Build a 1Password Login item JSON template string.
 TAG, HOST, USER and SECRET are required strings.  PORT is included
-as a custom field only when it is a non-empty string."
+as a custom field only when it is a non-empty string.  EXTRAS is a plist
+of (KEYWORD VALUE ...) for any additional fields the caller requested via
+auth-source's `:create' list; each is emitted as a custom STRING field."
   (let* ((base-fields
           (list `((id . "username") (type . "STRING") (purpose . "USERNAME")
                   (label . "username") (value . ,user))
@@ -374,12 +388,22 @@ as a custom field only when it is a non-empty string."
          (port-field (and port (not (string-empty-p port))
                           (list `((id . "port") (type . "STRING")
                                   (label . "port") (value . ,port)))))
-         (fields (vconcat base-fields port-field)))
+         (fields (vconcat base-fields port-field
+                          (op-auth-source--build-extra-fields extras))))
     (json-encode
      `((title . ,host)
        (category . "LOGIN")
        (tags . ,(vector tag))
        (fields . ,fields)))))
+
+(defun op-auth-source--build-extra-fields (extras)
+  "Build a list of custom STRING field alists from EXTRAS.
+EXTRAS is a plist of (KEYWORD VALUE ...); the keyword name without its
+leading colon becomes the field id and label."
+  (cl-loop for (key value) on extras by #'cddr
+           for label = (substring (symbol-name key) 1)
+           collect `((id . ,label) (type . "STRING")
+                     (label . ,label) (value . ,value))))
 
 (defun op-auth-source--get-secret (item-id account secret-label)
   "Fetch the SECRET-LABEL field for 1Password item ITEM-ID in ACCOUNT.
