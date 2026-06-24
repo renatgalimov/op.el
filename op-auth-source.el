@@ -211,13 +211,8 @@ list, in their original order."
   "List 1Password vaults visible to ACCOUNT.
 Returns a list of alists with vault details.
 Signals an error and pops up `*op-error*' on failure."
-  (let ((result (op-run (list "--account" account
-                              "vault" "list"
-                              "--format" "json"))))
-    (op--check-exit (plist-get result :exit-code)
-                    (plist-get result :stderr)
-                    (format "op --account %s vault list --format json" account))
-    (append (json-read-from-string (plist-get result :stdout)) nil)))
+  (op--run-json-list (list "--account" account "vault" "list" "--format" "json")
+                     (format "op --account %s vault list --format json" account)))
 
 (defun op-auth-source--prompt-fields (spec create)
   "Resolve required fields, prompting for any missing values.
