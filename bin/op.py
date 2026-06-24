@@ -139,10 +139,10 @@ def fixture_path(argv):
         template = json.loads(stdin_data)
         title = template.get("title", "")
         vault = None
-        it = iter(rest)
-        for arg in it:
+        arg_iter = iter(rest)
+        for arg in arg_iter:
             if arg == "--vault":
-                vault = next(it, None)
+                vault = next(arg_iter, None)
             elif arg.startswith("--vault="):
                 vault = arg.split("=", 1)[1]
         parts = ["item-create"]

@@ -292,10 +292,12 @@ Comparison is case-insensitive for labels, exact for values."
 
 (defun op-auth-source--value-to-string (value)
   "Coerce VALUE to a string for field matching.
-Strings pass through; symbols are converted via `symbol-name'."
+Strings pass through; symbols are converted via `symbol-name'; a list
+resolves to its first element (auth-source \"any of these\" patterns)."
   (cond
    ((stringp value) value)
    ((symbolp value) (symbol-name value))
+   ((consp value) (op-auth-source--value-to-string (car value)))
    (t (format "%s" value))))
 
 (defun op-auth-source--match-item (item criteria)

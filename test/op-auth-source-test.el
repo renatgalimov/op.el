@@ -96,6 +96,15 @@
 		 (expect (op-auth-source--field-match-p item :user "alice@example.com")
 			 :to-be nil))))
 
+ (describe "--value-to-string"
+	   (it "when given a list pattern should resolve to the first element"
+	       (expect (op-auth-source--value-to-string (quote ("587" "465")))
+		       :to-equal "587"))
+
+	   (it "when given a symbol should return its name"
+	       (expect (op-auth-source--value-to-string (quote imap))
+		       :to-equal "imap")))
+
  (describe "--list-accounts"
 	   (it "when called via op.py should return a list of account alists"
 	       (expect (op--list-accounts)
