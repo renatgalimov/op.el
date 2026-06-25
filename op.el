@@ -122,12 +122,18 @@ Each returned item alist has an extra `account_uuid' key."
   "List all 1Password accounts.
 Returns a list of alists with account details.
 Signals an error and pops up stderr if the command fails."
-  (let* ((result (op-run (list "account" "list" "--format" "json")))
-         (exit-code (plist-get result :exit-code))
-         (output (plist-get result :stdout))
-         (stderr (plist-get result :stderr)))
-    (op--check-exit exit-code stderr "op account list --format json")
-    (append (json-read-from-string output) nil)))
+  (op--run-json-list (list "account" "list" "--format" "json")
+                     "op account list --format json"))
+
+(defun op--run-json-list (args command)
+  "Run op with ARGS and return its JSON array output parsed as a list.
+COMMAND is the human-readable invocation used in error messages.
+Signals an error and pops up `*op-error*' if the command fails."
+  (let ((result (op-run args)))
+    (op--check-exit (plist-get result :exit-code)
+                    (plist-get result :stderr)
+                    command)
+    (append (json-read-from-string (plist-get result :stdout)) nil)))
 
 (defun op--list-items (account tag)
   "List 1Password item summaries tagged with TAG for ACCOUNT.

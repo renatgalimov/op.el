@@ -96,6 +96,15 @@
 		 (expect (op-auth-source--field-match-p item :user "alice@example.com")
 			 :to-be nil))))
 
+ (describe "--value-to-string"
+	   (it "when given a list pattern should resolve to the first element"
+	       (expect (op-auth-source--value-to-string (quote ("587" "465")))
+		       :to-equal "587"))
+
+	   (it "when given a symbol should return its name"
+	       (expect (op-auth-source--value-to-string (quote imap))
+		       :to-equal "imap")))
+
  (describe "--list-accounts"
 	   (it "when called via op.py should return a list of account alists"
 	       (expect (op--list-accounts)
@@ -251,6 +260,57 @@
 			'((fields . [((label . "username") (value . "me"))])))
 		       :to-equal nil)))
 
+ (describe "--build-template"
+	   (it "when given full spec should emit a deterministic login json string"
+	       (expect (op-auth-source--build-template
+			"emacs-auth-source"
+			"smtp.example.com"
+			"alice@example.com"
+			"587"
+			"p@ss")
+		       :to-equal
+		       "{\"title\":\"smtp.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"alice@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"p@ss\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"smtp.example.com\"},{\"id\":\"port\",\"type\":\"STRING\",\"label\":\"port\",\"value\":\"587\"}]}"))
+
+	   (it "when port is empty should omit the port field"
+	       (expect (op-auth-source--build-template
+			"emacs-auth-source"
+			"imap.example.com"
+			"bob@example.com"
+			""
+			"topsecret")
+		       :to-equal
+		       "{\"title\":\"imap.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"bob@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"imap.example.com\"}]}"))
+
+	   (it "when port is nil should omit the port field"
+	       (expect (op-auth-source--build-template
+			"emacs-auth-source"
+			"imap.example.com"
+			"bob@example.com"
+			nil
+			"topsecret")
+		       :to-equal
+		       "{\"title\":\"imap.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"bob@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"imap.example.com\"}]}"))
+
+	   (it "when given extra fields should append them as string fields after the base fields"
+	       (expect (op-auth-source--build-template
+			"emacs-auth-source"
+			"smtp.example.com"
+			"alice@example.com"
+			"587"
+			"p@ss"
+			'(:description "primary mail"))
+		       :to-equal
+		       "{\"title\":\"smtp.example.com\",\"category\":\"LOGIN\",\"tags\":[\"emacs-auth-source\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"alice@example.com\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"p@ss\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"smtp.example.com\"},{\"id\":\"port\",\"type\":\"STRING\",\"label\":\"port\",\"value\":\"587\"},{\"id\":\"description\",\"type\":\"STRING\",\"label\":\"description\",\"value\":\"primary mail\"}]}")))
+
+ (describe "--extra-fields"
+	   (it "when fields include keys beyond the base set should return only the extras"
+	       (expect (op-auth-source--extra-fields '(:host "h" :user "u" :port "587" :secret "s" :description "primary mail"))
+		       :to-equal '(:description "primary mail")))
+
+	   (it "when fields contain only base keys should return nil"
+	       (expect (op-auth-source--extra-fields '(:host "h" :user "u" :port "587" :secret "s"))
+		       :to-be nil)))
+
  (describe "--get-secret"
 	   (it "when called via op.py should return the password"
 	       (expect (op-auth-source--get-secret "sre4q66mawycb5dzmm7ka7kblm" "PXCTHFHEUXV4KPI5J63KDYOBO5" "password")
@@ -367,12 +427,122 @@
 	       (expect (auth-source-search :host "imap.example.com"
 					   :user "test@example.com"
 					   :port '("25" "587"))
-		       :to-be nil)))
+		       :to-be nil))
+
+	   (it "when no items match and :create t should dispatch to create-function and persist via op item create"
+	       (spy-on 'op-auth-source--resolve-account
+		       :and-return-value "PXCTHFHEUXV4KPI5J63KDYOBO5")
+	       (spy-on 'op-auth-source--resolve-vault
+		       :and-return-value "Op.el")
+	       (spy-on 'op-run :and-call-through)
+	       (let ((string-prompts '("alice" "587"))
+		     (passwd-prompts '("topsecret")))
+		 (cl-letf (((symbol-function 'read-string)
+			    (lambda (&rest _) (pop string-prompts)))
+			   ((symbol-function 'read-passwd)
+			    (lambda (&rest _) (pop passwd-prompts))))
+		   (let ((entry (car (auth-source-search
+				      :host "nonexistent.create.com"
+				      :create t))))
+		     (expect 'op-auth-source--resolve-account :to-have-been-called)
+		     (expect 'op-auth-source--resolve-vault :to-have-been-called)
+		     (expect (alist-get 'title (funcall (plist-get entry :save-function)))
+			     :to-equal "nonexistent.create.com")
+		     (expect 'op-run :to-have-been-called-with
+			     '("--account" "PXCTHFHEUXV4KPI5J63KDYOBO5"
+			       "item" "create"
+			       "--vault" "Op.el"
+			       "--format" "json"
+			       "-")
+			     "{\"title\":\"nonexistent.create.com\",\"category\":\"LOGIN\",\"tags\":[\"OpElTest\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"alice\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"nonexistent.create.com\"},{\"id\":\"port\",\"type\":\"STRING\",\"label\":\"port\",\"value\":\"587\"}]}"))))))
+
+ (describe "--prompt-for-field"
+	   (it "when given an unknown field should signal an error"
+	       (expect (op-auth-source--prompt-for-field 'unknown nil)
+		       :to-throw 'error)))
+
+ (describe "create"
+	   (before-each
+	    (spy-on 'op-auth-source--resolve-account
+		    :and-return-value "PXCTHFHEUXV4KPI5J63KDYOBO5")
+	    (spy-on 'op-auth-source--resolve-vault
+		    :and-return-value "Op.el"))
+
+	   (it "when spec provides every required field should return a result without prompting"
+	       (cl-letf (((symbol-function 'read-string)
+			  (lambda (&rest _) (error "read-string must not be called")))
+			 ((symbol-function 'read-passwd)
+			  (lambda (&rest _) (error "read-passwd must not be called"))))
+		 (expect (op-auth-source-create
+			  :host "smtp.example.com"
+			  :user "alice@example.com"
+			  :port "587"
+			  :secret "p@ss"
+			  :create t
+			  :backend op-auth-source-backend)
+			 :to-smart-match
+			 '((:host "smtp.example.com"
+				  :user "alice@example.com"
+				  :port "587"
+				  :account "PXCTHFHEUXV4KPI5J63KDYOBO5"
+				  :secret op-test-any
+				  :save-function op-test-any)))))
+
+	   (it "when fields are missing should prompt and use the entered values"
+	       (let ((string-prompts '("smtp.test.com" "alice" "587"))
+		     (passwd-prompts '("topsecret")))
+		 (cl-letf (((symbol-function 'read-string)
+			    (lambda (&rest _) (pop string-prompts)))
+			   ((symbol-function 'read-passwd)
+			    (lambda (&rest _) (pop passwd-prompts))))
+		   (let ((entry (car (op-auth-source-create
+				      :create t
+				      :backend op-auth-source-backend))))
+		     (expect entry
+			     :to-smart-match
+			     '(:host "smtp.test.com"
+				     :user "alice"
+				     :port "587"
+				     :account "PXCTHFHEUXV4KPI5J63KDYOBO5"
+				     :secret op-test-any
+				     :save-function op-test-any))
+		     (expect (funcall (plist-get entry :secret))
+			     :to-equal "topsecret")))))
+
+	   (it "when save-function is called and op fails should signal an error"
+	       (let ((entry (car (op-auth-source-create
+				  :host "create-fail.example.com"
+				  :user "alice@example.com"
+				  :port "443"
+				  :secret "topsecret"
+				  :create t
+				  :backend op-auth-source-backend))))
+		 (expect (funcall (plist-get entry :save-function))
+			 :to-throw 'error
+			 '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item create --vault Op.el --format json - failed (exit 1)"))))
+
+	   (it "when save-function fails should not write the cleartext password into *op-error*"
+	       (let ((entry (car (op-auth-source-create
+				  :host "create-fail.example.com"
+				  :user "alice@example.com"
+				  :port "443"
+				  :secret "topsecret"
+				  :create t
+				  :backend op-auth-source-backend))))
+		 (ignore-errors (funcall (plist-get entry :save-function)))
+		 (with-current-buffer "*op-error*"
+		   (expect (buffer-string) :not :to-match "topsecret")
+		   (expect (buffer-string) :to-match "<redacted>")))))
 
  (describe "backend-parse"
 	   (it "when given 1password symbol should return a backend"
 	       (let ((backend (op-auth-source-backend-parse '1password)))
 		 (expect backend :not :to-be nil)))
+
+	   (it "when given 1password symbol should return a backend with create-function wired"
+	       (let ((backend (op-auth-source-backend-parse '1password)))
+		 (expect (slot-value backend 'create-function)
+			 :to-equal #'op-auth-source-create)))
 
 	   (it "when given an unrelated entry should return nil"
 	       (expect (op-auth-source-backend-parse "~/.authinfo") :to-be nil)
