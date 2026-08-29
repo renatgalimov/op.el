@@ -89,6 +89,13 @@ FORMAT-STRING and ARGUMENTS are passed to `format'."
 (defvar op--pty-output ""
   "Accumulated output from the PTY shell process.")
 
+(defvar op--running nil
+  "Non-nil while `op-run' is waiting for a command to finish.
+`op--wait-for-command' calls `accept-process-output', which runs other
+processes' filters and timers.  Anything that might start a second op
+command from there must check this first: `op--pty-output' holds one
+command's output, so re-entering `op-run' corrupts both.")
+
 (defun op-read (path &optional account)
   "Read a default field from a 1Password item at PATH.
 
@@ -214,7 +221,8 @@ the PTY are decoded as text and arbitrary binary does not survive that.
 Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (op--ensure-pty)
   (op--log "op-run: %s %s" op-executable (mapconcat #'identity args " "))
-  (let ((command-id (op--generate-random-tag)))
+  (let ((command-id (op--generate-random-tag))
+        (op--running t))
     (unwind-protect
         (let ((result (progn
                         (setq op--pty-output "")

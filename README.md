@@ -110,7 +110,12 @@ vterm, `M-x shell` or `compile` is a different terminal, so `op` there prompts
 again.
 
 `op-shim-mode` closes that gap. It puts an `op` on `PATH` for Emacs's children
-that forwards the invocation to the terminal Emacs already authenticated:
+that forwards the invocation to the terminal Emacs already authenticated.
+
+It is macOS-only for now: identifying the calling process relies on `lsof`
+naming a connected socket after its peer's device address, which is a BSD form.
+Elsewhere the mode refuses to start rather than serving requests it cannot
+attribute.
 
 ```elisp
 (require 'op-shim)

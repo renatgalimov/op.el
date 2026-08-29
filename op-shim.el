@@ -65,10 +65,10 @@ Created with owner-only permissions."
   "Requests waiting to run, as a list of (CONNECTION . REQUEST-LINE).")
 
 (defvar op-shim--busy nil
-  "Non-nil while a request is running.
-`op--wait-for-command' calls `accept-process-output', which runs other
-processes' filters and timers.  Without this flag a request arriving then
-would re-enter `op-run' and clobber `op--pty-output'.")
+  "Non-nil while the queue is being drained.")
+
+(defconst op-shim--retry-delay-seconds 0.05
+  "Seconds to wait before retrying a request that arrived while op was busy.")
 
 (defvar op-shim--saved-path nil
   "Value of the PATH environment variable before `op-shim-mode' changed it.")
@@ -88,13 +88,31 @@ process\='s memory; it is a barrier against unrelated processes."
   :global t
   :group 'op
   (if op-shim-mode
-      (op-shim--start)
+      (condition-case error
+          (op-shim--start)
+        (error (setq op-shim-mode nil)
+               (signal (car error) (cdr error))))
     (op-shim--stop)))
+
+(defun op-shim--peer-lookup-supported-p ()
+  "Return non-nil when this platform can report who opened a connection.
+Identifying the caller relies on `lsof' naming a connected socket after
+its peer\='s device address, which is a BSD form."
+  ;; ponytail: macOS only.  Linux lsof reports unix peers through
+  ;; /proc/net/unix inodes instead, so it needs `ss -x -p' or a /proc walk.
+  ;; Until that exists the mode refuses to start rather than serving requests
+  ;; it cannot attribute.
+  (and (eq system-type 'darwin)
+       (executable-find "lsof")
+       t))
 
 (defun op-shim--start ()
   "Create the runtime directory, install the shim and start listening.
 Tears down a running server first, so enabling the mode twice does not
 stack another copy of the runtime directory onto PATH."
+  (unless (op-shim--peer-lookup-supported-p)
+    (user-error "op-shim-mode cannot identify callers on %s: it needs macOS lsof"
+                system-type))
   (when op-shim--server
     (op-shim--stop))
   (make-directory op-shim-runtime-directory t)
@@ -161,8 +179,13 @@ stack another copy of the runtime directory onto PATH."
       (run-at-time 0 nil #'op-shim--drain))))
 
 (defun op-shim--drain ()
-  "Run queued requests one at a time."
-  (unless op-shim--busy
+  "Run queued requests one at a time.
+Waits for any op command already in flight, including one started from
+Lisp rather than from here: `op-run' keeps a single command's output in
+`op--pty-output', so starting a second would corrupt both."
+  (if (or op-shim--busy op--running)
+      (when op-shim--queue
+        (run-at-time op-shim--retry-delay-seconds nil #'op-shim--drain))
     (let ((op-shim--busy t))
       (while op-shim--queue
         (let ((request (pop op-shim--queue)))
@@ -221,10 +244,21 @@ stack another copy of the runtime directory onto PATH."
                         peers)))))
 
 (defun op-shim--command-output (program &rest args)
-  "Return the standard output of PROGRAM run with ARGS."
-  (with-temp-buffer
-    (apply #'call-process program nil (list t nil) nil args)
-    (buffer-string)))
+  "Return the standard output of PROGRAM run with ARGS.
+Signals an error carrying PROGRAM's stderr when it fails, so a broken
+lookup is reported as such instead of being reported to the caller as a
+failed ancestry check."
+  (let ((stderr-file (make-temp-file "op-shim-stderr-")))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((status (apply #'call-process program nil
+                               (list t stderr-file) nil args)))
+            (unless (eq status 0)
+              (error "%s exited with %s: %s" program status
+                     (string-trim (op--read-and-delete-file stderr-file))))
+            (buffer-string)))
+      (when (file-exists-p stderr-file)
+        (delete-file stderr-file)))))
 
 (defun op-shim--peer-pids (lsof-output socket-path server-pid)
   "Return the pids connected to SOCKET-PATH through SERVER-PID's sockets.

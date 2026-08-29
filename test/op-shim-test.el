@@ -117,11 +117,11 @@
 (defvar op-shim-test--saved-executable nil)
 (defvar op-shim-test--saved-runtime-directory nil)
 
-(defun op-shim-test--run (arguments &optional environment)
-  "Run the shim with ARGUMENTS and return (EXIT-CODE STDOUT STDERR).
-ENVIRONMENT entries are prepended to `process-environment'.  The shim is
-run asynchronously because it waits for a reply that only this Emacs can
-send: blocking here would deadlock the request it just made."
+(defun op-shim-test--start (arguments &optional environment)
+  "Start the shim with ARGUMENTS and return a handle for `op-shim-test--wait'.
+ENVIRONMENT entries are prepended to `process-environment'.  The shim runs
+asynchronously because it waits for a reply that only this Emacs can send:
+blocking here would deadlock the request it just made."
   (let* ((stdout-buffer (generate-new-buffer " *op-shim-stdout*"))
 	 (stderr-buffer (generate-new-buffer " *op-shim-stderr*"))
 	 (process-environment (append environment process-environment))
@@ -140,7 +140,14 @@ send: blocking here would deadlock the request it just made."
 		:sentinel #'ignore
 		:command (cons (expand-file-name "bin/op-shim.py") arguments))))
     (process-send-eof shim)
-    (with-timeout (20 (delete-process shim))
+    (list shim stdout-buffer stderr-buffer)))
+
+(defun op-shim-test--wait (handle)
+  "Wait for the shim HANDLE to exit and return (EXIT-CODE STDOUT STDERR)."
+  (let ((shim (nth 0 handle))
+	(stdout-buffer (nth 1 handle))
+	(stderr-buffer (nth 2 handle)))
+    (with-timeout (30 (delete-process shim))
       (while (process-live-p shim)
 	(accept-process-output shim 0.05)))
     (while (accept-process-output nil 0.05))
@@ -151,131 +158,168 @@ send: blocking here would deadlock the request it just made."
       (kill-buffer stdout-buffer)
       (kill-buffer stderr-buffer))))
 
-(describe "op-shim-mode"
-	  (before-each
-	   (setq op-shim-test--saved-executable op-executable
-		 op-shim-test--saved-runtime-directory op-shim-runtime-directory
-		 op-shim-test--runtime (make-temp-file "op-shim-runtime-" t))
-	   (setq op-shim-runtime-directory op-shim-test--runtime
-		 op-executable (expand-file-name "bin/op.py"))
-	   (when (and op--pty-process (process-live-p op--pty-process))
-	     (delete-process op--pty-process)
-	     (setq op--pty-process nil))
-	   (op-shim-mode 1))
+(defun op-shim-test--run (arguments &optional environment)
+  "Run the shim with ARGUMENTS and return (EXIT-CODE STDOUT STDERR)."
+  (op-shim-test--wait (op-shim-test--start arguments environment)))
 
-	  (after-each
-	   (op-shim-mode -1)
-	   (delete-directory op-shim-test--runtime t)
-	   (setq op-executable op-shim-test--saved-executable
-		 op-shim-runtime-directory op-shim-test--saved-runtime-directory))
+(describe "op-shim--command-output"
+	  (it "should return the output of a successful command"
+	      (expect (op-shim--command-output "echo" "hello") :to-equal "hello\n"))
 
-	  (it "should create an owner-only socket"
-	      (expect (file-modes (op-shim--socket-path)) :to-equal #o600))
+	  (it "should signal with stderr when the command fails"
+	      (expect (op-shim--command-output "sh" "-c" "echo broken >&2; exit 3")
+		      :to-throw 'error)))
 
-	  (it "should put an executable named op on PATH"
-	      (expect (file-name-directory (executable-find "op"))
-		      :to-equal (file-name-as-directory op-shim-test--runtime)))
+(if (not (op-shim--peer-lookup-supported-p))
 
-	  (it "should return the secret and a zero exit code"
-	      (expect (op-shim-test--run (list "read" "op://Op.el/Email/password"))
-		      :to-equal (list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")))
+    (describe "op-shim-mode"
+	      (it "should refuse to start where callers cannot be identified"
+		  ;; Failing closed matters more than working: serving requests
+		  ;; that cannot be attributed would hand the authenticated
+		  ;; session to any local process.
+		  (expect (op-shim-mode 1) :to-throw 'user-error)
+		  (expect op-shim-mode :to-equal nil)))
 
-	  (it "should pass through the exit code and stderr of a failing command"
-	      (let ((result (op-shim-test--run
-			     (list "--account" "PXCTHFHEUXV4KPI5J63KDYOBO5"
-				   "item" "list" "--tags" "OpElFail" "--format" "json"))))
-		(expect (nth 0 result) :to-equal 1)
-		(expect (nth 1 result) :to-equal "")
-		(expect (nth 2 result) :not :to-equal "")))
+  (describe "op-shim-mode"
+	    (before-each
+	     (setq op-shim-test--saved-executable op-executable
+		   op-shim-test--saved-runtime-directory op-shim-runtime-directory
+		   op-shim-test--runtime (make-temp-file "op-shim-runtime-" t))
+	     (setq op-shim-runtime-directory op-shim-test--runtime
+		   op-executable (expand-file-name "bin/op.py"))
+	     (when (and op--pty-process (process-live-p op--pty-process))
+	       (delete-process op--pty-process)
+	       (setq op--pty-process nil))
+	     (op-shim-mode 1))
 
-	  (it "should preserve bytes that Emacs cannot decode as text"
-	      ;; Compared by digest: the bytes contain `%', which buttercup would
-	      ;; feed to `format' while rendering a failure message.
-	      (let* ((source (make-temp-file "op-shim-binary-"))
-		     (op-executable "/bin/cat"))
-		(unwind-protect
-		    (progn
-		      (let ((coding-system-for-write 'binary))
-			(with-temp-file source
-			  (set-buffer-multibyte nil)
-			  (dotimes (byte 256) (insert byte))))
-		      (expect (md5 (nth 1 (op-shim-test--run (list source))))
-			      :to-equal (md5 (op-shim-test--file-bytes source))))
-		  (delete-file source))))
+	    (after-each
+	     (op-shim-mode -1)
+	     (delete-directory op-shim-test--runtime t)
+	     (setq op-executable op-shim-test--saved-executable
+		   op-shim-runtime-directory op-shim-test--saved-runtime-directory))
 
-	  (it "should exec the real op instead of forwarding when disabled"
-	      (expect (op-shim-test--run (list "read" "op://Op.el/Email/password")
-					 (list "OP_SHIM_DISABLE=1"
-					       "OP_SHIM_REAL_OP=/bin/echo"))
-		      :to-equal (list 0 "read op://Op.el/Email/password\n" "")))
+	    (it "should create an owner-only socket"
+		(expect (file-modes (op-shim--socket-path)) :to-equal #o600))
 
-	  (it "should exec the real op for commands needing the caller's terminal"
-	      (expect (nth 1 (op-shim-test--run (list "run" "--" "true")
-						(list "OP_SHIM_REAL_OP=/bin/echo")))
-		      :to-equal "run -- true\n"))
+	    (it "should put an executable named op on PATH"
+		(expect (file-name-directory (executable-find "op"))
+			:to-equal (file-name-as-directory op-shim-test--runtime)))
 
-	  (it "should keep concurrent requests from corrupting each other"
-	      ;; A request arriving while op-run waits on the PTY must be queued,
-	      ;; not run: re-entering op-run would clobber op--pty-output.
-	      (let ((results (list (op-shim-test--run (list "read" "op://Op.el/Email/password"))
-				   (op-shim-test--run (list "read" "op://Op.el/Email/password")))))
-		(expect results
-			:to-equal
-			(list (list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")
-			      (list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")))))
+	    (it "should return the secret and a zero exit code"
+		(expect (op-shim-test--run (list "read" "op://Op.el/Email/password"))
+			:to-equal (list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")))
 
-	  (it "should restore PATH after being enabled more than once"
-	      (let ((path-while-enabled (getenv "PATH")))
-		(op-shim-mode 1)
-		(expect (getenv "PATH") :to-equal path-while-enabled)
-		(op-shim-mode -1)
-		(expect (getenv "PATH") :not :to-match
-			(regexp-quote op-shim-test--runtime))))
+	    (it "should pass through the exit code and stderr of a failing command"
+		(let ((result (op-shim-test--run
+			       (list "--account" "PXCTHFHEUXV4KPI5J63KDYOBO5"
+				     "item" "list" "--tags" "OpElFail" "--format" "json"))))
+		  (expect (nth 0 result) :to-equal 1)
+		  (expect (nth 1 result) :to-equal "")
+		  (expect (nth 2 result) :not :to-equal "")))
 
-	  (it "should be found as op by a shell running under Emacs"
-	      ;; The path a vterm user actually takes: bash resolves `op' from
-	      ;; PATH and finds the installed shim.
-	      (let* ((stdout-buffer (generate-new-buffer " *op-shim-shell*"))
-		     (shell (make-process
-			     :name "op-shim-shell"
-			     :buffer stdout-buffer
-			     :coding 'binary
-			     :noquery t
-			     :sentinel #'ignore
-			     :command (list "bash" "--norc" "--noprofile" "-c"
-					    "op read op://Op.el/Email/password"))))
-		(process-send-eof shell)
-		(unwind-protect
-		    (progn
-		      (with-timeout (20 (delete-process shell))
-			(while (process-live-p shell)
-			  (accept-process-output shell 0.05)))
-		      (expect (process-exit-status shell) :to-equal 0)
-		      (expect (with-current-buffer stdout-buffer (buffer-string))
-			      :to-equal "comanche-muscular-tabloids-minotaur-ally\n"))
-		  (kill-buffer stdout-buffer))))
+	    (it "should preserve bytes that Emacs cannot decode as text"
+		;; Compared by digest: the bytes contain `%', which buttercup would
+		;; feed to `format' while rendering a failure message.
+		(let* ((source (make-temp-file "op-shim-binary-"))
+		       (op-executable "/bin/cat"))
+		  (unwind-protect
+		      (progn
+			(let ((coding-system-for-write 'binary))
+			  (with-temp-file source
+			    (set-buffer-multibyte nil)
+			    (dotimes (byte 256) (insert byte))))
+			(expect (md5 (nth 1 (op-shim-test--run (list source))))
+				:to-equal (md5 (op-shim-test--file-bytes source))))
+		    (delete-file source))))
 
-	  (it "should refuse a caller that does not descend from Emacs"
-	      ;; The caller is reparented to init before it connects, so the
-	      ;; ancestry check sees a process outside this Emacs's tree.  This is
-	      ;; the whole security guarantee, so it is checked against a real
-	      ;; detached process rather than a stubbed pid.
-	      (let ((report (make-temp-file "op-shim-detached-")))
-		(unwind-protect
-		    (progn
-		      (call-process (expand-file-name "test/helpers/detach.py") nil nil nil
-				    report
-				    (expand-file-name "bin/op-shim.py")
-				    "read" "op://Op.el/Email/password")
-		      (with-timeout (20 nil)
-			(while (zerop (or (file-attribute-size (file-attributes report)) 0))
-			  (accept-process-output nil 0.05)))
-		      (let ((output (with-temp-buffer
-				      (insert-file-contents report)
-				      (buffer-string))))
-			(expect output :to-match "does not descend from this Emacs")
-			(expect output :to-match "EXIT:1")
-			(expect output :not :to-match "comanche")))
-		  (delete-file report)))))
+	    (it "should exec the real op instead of forwarding when disabled"
+		(expect (op-shim-test--run (list "read" "op://Op.el/Email/password")
+					   (list "OP_SHIM_DISABLE=1"
+						 "OP_SHIM_REAL_OP=/bin/echo"))
+			:to-equal (list 0 "read op://Op.el/Email/password\n" "")))
+
+	    (it "should exec the real op for commands needing the caller's terminal"
+		(expect (nth 1 (op-shim-test--run (list "run" "--" "true")
+						  (list "OP_SHIM_REAL_OP=/bin/echo")))
+			:to-equal "run -- true\n"))
+
+	    (it "should keep overlapping requests from corrupting each other"
+		;; Both shims are started before either is waited on, so the second
+		;; request really does arrive while the first is running.  Queueing
+		;; is what keeps it from re-entering op-run and clobbering
+		;; op--pty-output.
+		(let* ((first (op-shim-test--start (list "read" "op://Op.el/Email/password")))
+		       (second (op-shim-test--start (list "read" "op://Op.el/Email/password")))
+		       (results (list (op-shim-test--wait first)
+				      (op-shim-test--wait second))))
+		  (expect results
+			  :to-equal
+			  (list (list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")
+				(list 0 "comanche-muscular-tabloids-minotaur-ally\n" "")))))
+
+	    (it "should queue a request that arrives while Lisp is running op"
+		;; op-read here is an ordinary Lisp caller, not the drain loop, so
+		;; only op--running stops the arriving request from re-entering
+		;; op-run and corrupting both results.
+		(let* ((shim (op-shim-test--start (list "read" "op://Op.el/Email/password")))
+		       (from-lisp (op-read "op://Op.el/Email/password"))
+		       (from-shim (op-shim-test--wait shim)))
+		  (expect from-lisp :to-equal "comanche-muscular-tabloids-minotaur-ally")
+		  (expect from-shim
+			  :to-equal (list 0 "comanche-muscular-tabloids-minotaur-ally\n" ""))))
+
+	    (it "should restore PATH after being enabled more than once"
+		(let ((path-while-enabled (getenv "PATH")))
+		  (op-shim-mode 1)
+		  (expect (getenv "PATH") :to-equal path-while-enabled)
+		  (op-shim-mode -1)
+		  (expect (getenv "PATH") :not :to-match
+			  (regexp-quote op-shim-test--runtime))))
+
+	    (it "should be found as op by a shell running under Emacs"
+		;; The path a vterm user actually takes: bash resolves `op' from
+		;; PATH and finds the installed shim.
+		(let* ((stdout-buffer (generate-new-buffer " *op-shim-shell*"))
+		       (shell (make-process
+			       :name "op-shim-shell"
+			       :buffer stdout-buffer
+			       :coding 'binary
+			       :noquery t
+			       :sentinel #'ignore
+			       :command (list "bash" "--norc" "--noprofile" "-c"
+					      "op read op://Op.el/Email/password"))))
+		  (process-send-eof shell)
+		  (unwind-protect
+		      (progn
+			(with-timeout (20 (delete-process shell))
+			  (while (process-live-p shell)
+			    (accept-process-output shell 0.05)))
+			(expect (process-exit-status shell) :to-equal 0)
+			(expect (with-current-buffer stdout-buffer (buffer-string))
+				:to-equal "comanche-muscular-tabloids-minotaur-ally\n"))
+		    (kill-buffer stdout-buffer))))
+
+	    (it "should refuse a caller that does not descend from Emacs"
+		;; The caller is reparented to init before it connects, so the
+		;; ancestry check sees a process outside this Emacs's tree.  This is
+		;; the whole security guarantee, so it is checked against a real
+		;; detached process rather than a stubbed pid.
+		(let ((report (make-temp-file "op-shim-detached-")))
+		  (unwind-protect
+		      (progn
+			(call-process (expand-file-name "test/helpers/detach.py") nil nil nil
+				      report
+				      (expand-file-name "bin/op-shim.py")
+				      "read" "op://Op.el/Email/password")
+			(with-timeout (20 nil)
+			  (while (zerop (or (file-attribute-size (file-attributes report)) 0))
+			    (accept-process-output nil 0.05)))
+			(let ((output (with-temp-buffer
+					(insert-file-contents report)
+					(buffer-string))))
+			  (expect output :to-match "does not descend from this Emacs")
+			  (expect output :to-match "EXIT:1")
+			  (expect output :not :to-match "comanche")))
+		    (delete-file report))))))
 
 ;;; op-shim-test.el ends here
