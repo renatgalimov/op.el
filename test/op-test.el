@@ -3,6 +3,14 @@
 (require 'buttercup)
 (load-file "op.el")
 
+(defun op-test--file-bytes (path)
+  "Return the contents of PATH as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((coding-system-for-read 'binary))
+      (insert-file-contents-literally path))
+    (buffer-string)))
+
 (describe "op-read"
 	  (it "reads a secret via op executable"
 	      (let ((op-executable (expand-file-name "../bin/op.py"
@@ -146,5 +154,73 @@
 		    (op-run (list "read" "op://Op.el/Email/password"))))
 		(let ((stderr-files-after (directory-files temporary-file-directory t "op-stderr")))
 		  (expect stderr-files-after :to-equal stderr-files-before)))))
+
+(describe "op-run with a working directory and a stdout file"
+	  ;; These specs bind `op-executable' to ordinary system commands rather
+	  ;; than bin/op.py: what is under test is the shell command op-run
+	  ;; builds, not any op behaviour.
+	  (before-each
+	   (when (and op--pty-process (process-live-p op--pty-process))
+	     (delete-process op--pty-process)
+	     (setq op--pty-process nil)))
+
+	  (it "should run the command in the requested directory"
+	      (let* ((op-executable "/bin/pwd")
+		     (directory (file-truename (make-temp-file "op-cwd-" t)))
+		     (result (op-run nil nil directory)))
+		(unwind-protect
+		    (progn
+		      (expect (plist-get result :exit-code) :to-equal 0)
+		      (expect (string-trim (plist-get result :stdout)) :to-equal directory))
+		  (delete-directory directory t))))
+
+	  (it "should report a non-zero exit code when the directory is missing"
+	      (let* ((op-executable "/bin/pwd")
+		     (result (op-run nil nil "/nonexistent-op-el-directory")))
+		(expect (plist-get result :exit-code) :not :to-equal 0)))
+
+	  (it "should write stdout to a caller-supplied file instead of returning it"
+	      (let* ((op-executable "/bin/echo")
+		     (stdout-file (make-temp-file "op-stdout-test-")))
+		(unwind-protect
+		    (let ((result (op-run (list "hello") nil nil stdout-file)))
+		      (expect (plist-get result :exit-code) :to-equal 0)
+		      (expect (plist-get result :stdout) :to-equal "")
+		      (expect (with-temp-buffer
+				(insert-file-contents stdout-file)
+				(buffer-string))
+			      :to-equal "hello\n"))
+		  (delete-file stdout-file))))
+
+	  (it "should preserve bytes that Emacs cannot decode as text"
+	      ;; Reading arbitrary bytes back through the PTY corrupts them, which
+	      ;; is why the shim has op write stdout straight to a file.
+	      (let* ((op-executable "/bin/cat")
+		     (source (make-temp-file "op-binary-source-"))
+		     (stdout-file (make-temp-file "op-binary-out-")))
+		(unwind-protect
+		    (progn
+		      (let ((coding-system-for-write 'binary))
+			(with-temp-file source
+			  (set-buffer-multibyte nil)
+			  (dotimes (byte 256) (insert byte))))
+		      (op-run (list source) nil nil stdout-file)
+		      (expect (op-test--file-bytes stdout-file)
+			      :to-equal (op-test--file-bytes source)))
+		  (delete-file source)
+		  (delete-file stdout-file)))))
+
+(describe "op--start-pty"
+	  (before-each
+	   (when (and op--pty-process (process-live-p op--pty-process))
+	     (delete-process op--pty-process)
+	     (setq op--pty-process nil)))
+
+	  (it "should mark the shell so the shim never forwards back into Emacs"
+	      ;; The PTY shell is itself a descendant of Emacs, so the ancestry
+	      ;; check cannot stop a loop; this flag is what stops it.
+	      (let ((op-executable "/usr/bin/printenv"))
+		(expect (string-trim (plist-get (op-run (list "OP_SHIM_DISABLE")) :stdout))
+			:to-equal "1"))))
 
 (provide 'op-test)

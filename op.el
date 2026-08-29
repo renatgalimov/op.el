@@ -204,10 +204,13 @@ STDIN-DATA, if non-nil, is included in the error buffer for diagnostics."
       (display-buffer (current-buffer)))
     (error "%s failed (exit %d)" command exit-code)))
 
-(defun op-run (args &optional stdin-data)
+(defun op-run (args &optional stdin-data cwd stdout-file)
   "Run the op CLI with ARGS through a persistent PTY shell.
 ARGS is a list of argument strings.  Optional STDIN-DATA is a string
-piped to the command\\='s stdin via a temp file.
+piped to the command\\='s stdin via a temp file.  Optional CWD is the
+directory to run in.  Optional STDOUT-FILE receives the command\\='s
+stdout verbatim; :stdout is then empty, because bytes read back through
+the PTY are decoded as text and arbitrary binary does not survive that.
 Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
   (op--ensure-pty)
   (op--log "op-run: %s %s" op-executable (mapconcat #'identity args " "))
@@ -215,7 +218,7 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
     (unwind-protect
         (let ((result (progn
                         (setq op--pty-output "")
-                        (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data))
+                        (process-send-string op--pty-process (op--make-run-shell-command command-id args stdin-data cwd stdout-file))
                         (op--wait-for-command command-id args)
                         (op--parse-pty-output command-id))))
           (op--log "op-run: exit-code=%d" (plist-get result :exit-code))
@@ -246,7 +249,9 @@ Returns a plist (:exit-code N :stdout STRING :stderr STRING)."
          :connection-type 'pty
          :filter #'op--filter-pty)
         op--pty-output "")
-  (process-send-string op--pty-process "stty -echo && PS1='' && PS2='' && set -o pipefail\n")
+  ;; OP_SHIM_DISABLE stops `op-shim' forwarding back into Emacs: this shell is
+  ;; a descendant of Emacs, so the ancestry check would happily authorize it.
+  (process-send-string op--pty-process "export OP_SHIM_DISABLE=1 && stty -echo && PS1='' && PS2='' && set -o pipefail\n")
   (accept-process-output op--pty-process op--pty-startup-timeout-seconds)
   (setq op--pty-output ""))
 
@@ -278,11 +283,14 @@ does not respond, escalates to SIGKILL and discards the PTY."
   "Return the stdin temp file path for COMMAND-ID."
   (expand-file-name (format "op-stdin-%s" command-id) temporary-file-directory))
 
-(defun op--make-run-shell-command (command-id args &optional stdin-data)
+(defun op--make-run-shell-command (command-id args &optional stdin-data cwd stdout-file)
   "Build the shell command string for an op invocation.
 COMMAND-ID is a unique tag used to delimit output.
 ARGS is a list of argument strings for the op executable.
 Optional STDIN-DATA, if non-nil, is written to a temp file and piped as stdin.
+Optional CWD, if non-nil, is entered before op runs; a failed `cd' aborts
+the group and surfaces as a non-zero exit code.
+Optional STDOUT-FILE, if non-nil, receives stdout instead of the PTY.
 The op CLI requires stdin to be a real pipe when item id is `-', so the
 shell command pipes the temp file through `cat' rather than using `<file'
 redirection.  Combined with `pipefail' set in `op--start-pty', the exit
@@ -296,13 +304,19 @@ Returns the shell command string."
                         (write-region stdin-data nil file nil 'silent)
                         file)))
         (quoted-args (mapconcat #'shell-quote-argument args " ")))
-    (format "printf '\\n%s\\n' && %s%s %s 2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
+    (format "printf '\\n%s\\n' && %s{ %s%s %s; } %s2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
             begin-tag
             (if stdin-file
                 (format "cat %s | " (shell-quote-argument stdin-file))
               "")
+            (if cwd
+                (format "cd %s && " (shell-quote-argument cwd))
+              "")
             (shell-quote-argument op-executable)
             quoted-args
+            (if stdout-file
+                (format ">%s " (shell-quote-argument stdout-file))
+              "")
             (shell-quote-argument stderr-file)
             end-tag)))
 

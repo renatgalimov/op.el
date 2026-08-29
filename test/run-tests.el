@@ -6,7 +6,8 @@
   (add-to-list 'load-path script-dir)
   (require 'buttercup)
   (load (expand-file-name "op-test.el" script-dir))
-  (load (expand-file-name "op-auth-source-test.el" script-dir)))
+  (load (expand-file-name "op-auth-source-test.el" script-dir))
+  (load (expand-file-name "op-shim-test.el" script-dir)))
 
 (setq backtrace-on-error-noninteractive nil)
 
