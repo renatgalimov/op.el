@@ -54,6 +54,11 @@
 		  (expect (string-trim (plist-get result :stdout))
 			  :to-equal "comanche-muscular-tabloids-minotaur-ally"))))
 
+	  (it "should pass --no-color before the command arguments"
+	      (let ((op-executable "echo"))
+		(expect (op-run (list "read" "op://Op.el/Email/password"))
+			:to-equal (list :exit-code 0 :stdout "--no-color read op://Op.el/Email/password\n" :stderr ""))))
+
 	  (it "should return non-zero exit code on failure"
 	      (let ((op-executable (expand-file-name "../bin/op.py"
 						     (file-name-directory load-file-name))))

@@ -296,7 +296,7 @@ Returns the shell command string."
                         (write-region stdin-data nil file nil 'silent)
                         file)))
         (quoted-args (mapconcat #'shell-quote-argument args " ")))
-    (format "printf '\\n%s\\n' && %s%s %s 2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
+    (format "printf '\\n%s\\n' && %s%s --no-color %s 2>%s; printf '\\n%s:%%d\\n' \"$?\"\n"
             begin-tag
             (if stdin-file
                 (format "cat %s | " (shell-quote-argument stdin-file))

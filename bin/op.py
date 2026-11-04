@@ -33,6 +33,7 @@ MODE = os.environ.get("OP_MODE", "mock")
 FIXTURE_DIR = Path(os.environ.get("OP_FIXTURE_DIR", PROJECT_DIR / "test" / "fixtures"))
 
 GLOBAL_FLAGS = {"--config", "--encoding", "--session", "--cache", "--iso-timestamps"}
+BOOLEAN_GLOBAL_FLAGS = {"--no-color"}
 
 
 def extract_account(argv):
@@ -57,6 +58,8 @@ def strip_global_flags(argv):
     for arg in it:
         if arg in GLOBAL_FLAGS:
             next(it, None)
+        elif arg in BOOLEAN_GLOBAL_FLAGS:
+            continue
         elif any(arg.startswith(f + "=") for f in GLOBAL_FLAGS):
             continue
         else:
