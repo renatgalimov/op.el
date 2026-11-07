@@ -30,7 +30,7 @@ For all real-CLI Buttercup tests, use a disposable signed-in account. From the p
 make test-live
 ```
 
-This creates a uniquely named temporary vault and two test items, runs the suite with all live cases enabled, then deletes the items and vault and verifies their absence. Cleanup failures report the vault name and ID for manual recovery. If vault creation has an ambiguous outcome, inspect the disposable account for the reported unique name; verify ownership before deleting anything. On timeout or interruption the vault is retained for manual cleanup after stopping all test processes. The runner refuses non-loopback proxies, bypass settings, or missing CA configuration. The tests traverse every account visible to `op`, so use an isolated CLI configuration containing only the disposable account.
+This creates a uniquely named temporary vault and five test items, runs the suite with all live cases enabled, then deletes the items and vault and verifies their absence. Cleanup failures report the vault name and ID for manual recovery. If vault creation has an ambiguous outcome, inspect the disposable account for the reported unique name; verify ownership before deleting anything. On timeout or interruption the vault is retained for manual cleanup after stopping all test processes. The runner refuses non-loopback proxies, bypass settings, or missing CA configuration. The tests traverse every account visible to `op`, so use an isolated CLI configuration containing only the disposable account.
 
 `make test` runs the pure suite without credentials; live cases are skipped unless the `OP_TEST_*` and `OP_AUTH_TEST_*` variables documented in the test files are configured. A successful run with skipped cases is not equivalent to `make test-live`.
 

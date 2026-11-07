@@ -49,6 +49,140 @@
 		(setenv "https_proxy" nil) (setenv "NO_PROXY" nil) (setenv "no_proxy" nil)
 		(expect (op-test--mitmproxy-p) :to-be nil))))
 
+(describe "op-completion-at-point"
+	  (after-each (op-test--stop-pty))
+	  (it "does not claim completion outside an op reference"
+	      (with-temp-buffer
+		(insert "ordinary text")
+		(expect (op-completion-at-point) :to-be nil)))
+	  (it "does not claim an embedded scheme or unrelated text"
+	      (dolist (text '("xop://Prod" "op://item, text"
+			      "Use op://Prod for staging" "\"See op://Prod for details\""))
+		(with-temp-buffer
+		  (insert text)
+		  (expect (op-completion-at-point) :to-be nil))))
+	  (it "offers field completion after a vault and item"
+	      (with-temp-buffer
+		(insert "op://Engineering/Azure Production Password/")
+		(let ((capf (op-completion-at-point)))
+		  (expect capf :to-be-truthy)
+		  (expect (marker-position (nth 0 capf)) :to-equal (point)))))
+	  (it "does not interpret vault or item names as CLI options"
+	      (expect (op--completion-get-args "--vault-name" "--reveal")
+		      :to-equal '("item" "get" "--vault=--vault-name" "--format" "json" "--" "--reveal")))
+	  (it "does not start the CLI merely to identify a completion region"
+	      (with-temp-buffer
+		(let ((op-executable "/nonexistent/op"))
+		  (insert "op://Prod")
+		  (expect (op-completion-at-point) :to-be-truthy))))
+	  (it "includes the rest of a reference when point is inside it"
+	      (with-temp-buffer
+		(insert "\"op://Production\"")
+		(backward-char 8)
+		(let ((capf (op-completion-at-point)))
+		  (expect (buffer-substring-no-properties (nth 0 capf) (nth 1 capf))
+			  :to-equal "Production"))))
+	  (it "does not consume following prose or a field segment"
+	      (dolist (text '("op://Prod is used here" "\"op://Prod for details\""))
+		(with-temp-buffer
+		  (insert text)
+		  (goto-char (point-min))
+		  (search-forward "op://Prod")
+		  (let ((capf (op-completion-at-point)))
+		    (expect (buffer-substring-no-properties (nth 0 capf) (nth 1 capf))
+			    :to-equal "Prod")))))
+	  (it "does not replace an existing item when point is inside the vault"
+	      (dolist (offset '(2 5))
+		(with-temp-buffer
+		  (insert "op://Vault/Item")
+		  (goto-char (+ (point-min) (length "op://") offset))
+		  (expect (op-completion-at-point) :to-be nil))))
+	  (it "matches item names case-insensitively as substrings"
+	      (expect (car (op--completion-all "prod" '("Engineering/Azure Production Password") nil 4))
+		      :to-equal "Engineering/Azure Production Password"))
+	  (it "does not insert a misleading partial path when multiple items match"
+	      (expect (op--completion-try "Prod"
+					  '("Engineering/Production Database" "Engineering/Production Server")
+					  nil 4)
+		      :to-equal '("Prod" . 4)))
+	  (it "lists and completes real item fields without exposing their values"
+	      (op-test--fixture)
+	      (with-temp-buffer
+		(add-hook 'completion-at-point-functions #'op-completion-at-point nil t)
+		(insert (format "op://%s/%s/" (getenv "OP_TEST_VAULT_ID") (getenv "OP_TEST_ITEM_ID")))
+		(let* ((table (nth 2 (op-completion-at-point)))
+		       (candidates (all-completions "" table)))
+		  (expect (member "username" candidates) :to-be-truthy)
+		  (expect (member "password" candidates) :to-be-truthy)
+		  (expect (format "%S" candidates) :not :to-match "fixture-only-not-a-secret")
+		  (expect op--pty-output :not :to-match "fixture-only-not-a-secret")
+		  (insert "pass")
+		  (completion-at-point)
+		  (expect (buffer-string) :to-match "/password$")
+		  (expect (op-read (buffer-string)) :to-equal "fixture-only-not-a-secret"))))
+	  (it "lists fields of an item whose title resembles a CLI option"
+	      (op-test--fixture)
+	      (with-temp-buffer
+		(insert (format "op://%s/--reveal/" (getenv "OP_TEST_VAULT_ID")))
+		(let ((candidates (all-completions "" (nth 2 (op-completion-at-point)))))
+		  (expect (member "password" candidates) :to-be-truthy))))
+	  (it "completes a section field whose name needs an ID"
+	      (op-test--fixture)
+	      (with-temp-buffer
+		(add-hook 'completion-at-point-functions #'op-completion-at-point nil t)
+		(insert (format "op://%s/--reveal/api" (getenv "OP_TEST_VAULT_ID")))
+		(completion-at-point)
+		(expect (buffer-string) :to-match "/Demo Section/api_key$")
+		(expect (op-read (buffer-string)) :to-equal "fixture-only-not-a-secret")))
+	  (it "finds a disposable item by a substring using the real CLI"
+	      (op-test--fixture)
+	      (with-temp-buffer
+		(add-hook 'completion-at-point-functions #'op-completion-at-point nil t)
+		(insert "\"op://TEST-DUP\"")
+		(backward-char)
+		(let* ((capf (op-completion-at-point))
+		       (table (nth 2 capf))
+		       (completions (completion-all-completions "TEST-DUP" table nil 8))
+		       (candidate (car completions)))
+		  (expect (buffer-substring-no-properties (nth 0 capf) (nth 1 capf))
+			  :to-equal "TEST-DUP")
+		  (expect candidate :to-match "/op-el-test-duplicate$")
+		  (completion-at-point)
+		  (expect (buffer-substring-no-properties (point-min) (point-max))
+			  :to-equal (concat "\"op://" (substring-no-properties candidate) "\""))
+		  (expect (op-read (concat "op://" candidate "/password"))
+			  :to-equal "fixture-only-not-a-secret"))))
+	  (it "finds an unsupported item title by name and inserts its ID"
+	      (op-test--fixture)
+	      (let ((item (getenv "OP_TEST_COMPLETION_ITEM_ID")))
+		(unless item (buttercup-skip "Set OP_TEST_COMPLETION_ITEM_ID for completion coverage"))
+		(with-temp-buffer
+		  (add-hook 'completion-at-point-functions #'op-completion-at-point nil t)
+		  (insert "op://Production")
+		  (completion-at-point)
+		  (expect (buffer-string) :to-match (concat "/" (regexp-quote item) "$"))
+		  (expect (op-read (concat (buffer-string) "/password"))
+			  :to-equal "fixture-only-not-a-secret"))))
+	  (it "keeps duplicate item titles searchable and uses distinct IDs"
+	      (op-test--fixture)
+	      (let ((duplicate (getenv "OP_TEST_DUPLICATE_TITLE_ID")))
+		(unless duplicate (buttercup-skip "Set OP_TEST_DUPLICATE_TITLE_ID for duplicate coverage"))
+		(with-temp-buffer
+		  (let ((candidates (op--completion-candidates)))
+		    (dolist (id (list (getenv "OP_TEST_ITEM_ID") duplicate))
+		      (let ((entry (cl-find-if (lambda (candidate)
+						 (string-suffix-p (concat "/" id) (cdr candidate)))
+					       candidates)))
+			(expect entry :to-be-truthy)
+			(expect (car entry) :to-match (concat "op-el-test \\[" (regexp-quote id) "\\]$"))
+			(expect (op-read (concat "op://" (cdr entry) "/password"))
+				:to-equal "fixture-only-not-a-secret")))))))
+	  (it "uses IDs for unsupported or ambiguous reference parts"
+	      (expect (op--completion-reference-part "Azure Production Password" "item-id" nil)
+		      :to-equal "Azure Production Password")
+	      (expect (op--completion-reference-part "with/slash" "item-id" nil) :to-equal "item-id")
+	      (expect (op--completion-reference-part "same" "item-id" t) :to-equal "item-id")))
+
 (describe "op-read"
 	  (after-each (op-test--stop-pty))
 	  (it "reads a disposable secret via the real op executable"

@@ -14,6 +14,7 @@
 
 - Call `op` from Emacs without repeated authentication prompts
 - Read secrets anywhere via `op-read`
+- Complete `op://` item paths at point
 - Use 1Password as an `auth-source` backend
 
 ---
@@ -56,6 +57,36 @@ Clone the repository and add it to your `load-path`:
 (add-to-list 'load-path "/path/to/op.el")
 (require 'op)
 ```
+
+## Completing item references
+
+Add `op-completion-at-point` to `completion-at-point-functions` in the buffers
+where you want it, for example:
+
+```elisp
+(add-hook 'text-mode-hook
+          (lambda ()
+            (add-hook 'completion-at-point-functions #'op-completion-at-point nil t)))
+```
+
+Type `op://` followed by part of an item or vault name and invoke
+`completion-at-point` (normally `M-TAB` or `C-M-i`). For example, `op://Prod` can match
+`op://Engineering/Azure Production Password`. Type `/` and invoke completion
+again to choose a field, such as `password`. Emacs uses its normal in-buffer
+completion interface, including `*Completions*` when there are multiple choices.
+Search using a fragment without spaces; completed names may contain spaces.
+
+Item completion lists summaries from the current `op` account. Field completion
+loads the selected item, whose CLI response may contain secret values in Emacs
+memory. Candidates contain only field names and references. The response and
+parsed field values are cleared on a best-effort basis; this is not a guarantee
+of secure erasure.
+
+Names with unsupported reference characters and names that are ambiguous within
+the account can be searched by name; completion inserts IDs for those parts.
+The `op-reference` completion category defaults to case-insensitive
+substring matching; your `completion-category-overrides` can change that behavior.
+Item paths are cached per buffer for three seconds.
 
 ## auth-source Integration
 
