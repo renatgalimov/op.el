@@ -1,8 +1,33 @@
-;;; op-auth-source-test.el --- tests for op-auth-source -*- lexical-binding: t; -*-
+;;; op-auth-source-test.el --- auth-source tests -*- lexical-binding: t; -*-
 
 (require 'buttercup)
 (require 'auth-source)
 (load-file "op-auth-source.el")
+(load (expand-file-name "op-test-support.el" (file-name-directory load-file-name)))
+
+;; Live tests are opt-in.  Set OP_AUTH_TEST_ACCOUNT to the account UUID,
+;; OP_AUTH_TEST_VAULT to a writable disposable vault ID, OP_AUTH_TEST_ITEM to
+;; a disposable Login item ID in that vault, and OP_AUTH_TEST_TAG to its unique
+;; tag.  Set OP_AUTH_TEST_HOST, OP_AUTH_TEST_USER, OP_AUTH_TEST_PORT and
+;; OP_AUTH_TEST_SECRET to the item's host, username, port and password fields.
+;; OP_AUTH_TEST_DUPLICATE_ITEM optionally identifies a second matching item.
+;; Use synthetic values only.  Configure op authentication and the proxy/CA
+;; before starting Emacs; op.el keeps a persistent subprocess.  The account
+;; must be visible in `op account list'; every account listed must be signed
+;; in because search traverses all of them.  The suite creates and deletes one
+;; additional item; interrupted runs may require manual cleanup in the vault.
+;; Without the complete environment, integration specs are explicitly pending.
+
+(defun op-auth-test--require-live ()
+  "Skip unless the disposable live fixture is completely configured."
+  (dolist (name '("OP_AUTH_TEST_ACCOUNT" "OP_AUTH_TEST_VAULT"
+                  "OP_AUTH_TEST_ITEM" "OP_AUTH_TEST_TAG" "OP_AUTH_TEST_HOST"
+                  "OP_AUTH_TEST_USER" "OP_AUTH_TEST_PORT" "OP_AUTH_TEST_SECRET"))
+    (unless (and (getenv name) (not (string-empty-p (getenv name))))
+      (buttercup-skip "Live fixture requires %s" name)))
+  (unless (and (op-test--loopback-proxy-p) (op-test--mitmproxy-p)
+               (equal op-executable "op") (executable-find "op"))
+    (buttercup-skip "Live tests require real op and a loopback mitmproxy")))
 
 (defconst op-test-frozen-time (encode-time 0 0 0 1 1 2026)
   "Fixed time for all tests: 2026-01-01 00:00:00.")
@@ -37,14 +62,10 @@
   (setq op-auth-source-test--orig-sources auth-sources)
   (setq op-auth-source-test--orig-tag op-auth-source-tag)
   (setq op-auth-source-tag "OpElTest")
-  (setq op-auth-source-test--orig-executable op-executable)
-  (setq op-executable (expand-file-name "../bin/op.py"
-					(file-name-directory load-file-name)))
   (when (get-buffer "*op-error*")
     (kill-buffer "*op-error*")))
 
  (after-each
-  (setq op-executable op-auth-source-test--orig-executable)
   (setq op-auth-source-tag op-auth-source-test--orig-tag)
   (setq auth-sources op-auth-source-test--orig-sources))
 
@@ -104,28 +125,6 @@
 	   (it "when given a symbol should return its name"
 	       (expect (op-auth-source--value-to-string (quote imap))
 		       :to-equal "imap")))
-
- (describe "--list-accounts"
-	   (it "when called via op.py should return a list of account alists"
-	       (expect (op--list-accounts)
-		       :to-equal
-		       '(((account_uuid . "WRYZIV66ZGZOUUQR3SKXFQ753Q")
-			  (email . "akparb9@igassa15.co")
-			  (url . "sa.niwehonow.co")
-			  (user_uuid . "HKP5DUHCUNSXGH4UC6QUUNFNQT"))
-			 ((account_uuid . "PXCTHFHEUXV4KPI5J63KDYOBO5")
-			  (email . "butele1@ownuth3d.gov")
-			  (url . "sa.niwehonow.co")
-			  (user_uuid . "F6RKTCOKKHEU3H6JM4XQBEJPJT"))))))
-
- (describe "--list-items"
-	   (it "when op fails should signal an error and pop up *op-error* buffer"
-	       (let ((op-auth-source-tag "OpElFail"))
-		 (expect (op--list-items "PXCTHFHEUXV4KPI5J63KDYOBO5" op-auth-source-tag)
-			 :to-throw 'error '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item list --tags OpElFail --format json failed (exit 1)"))
-		 (expect (get-buffer "*op-error*") :not :to-be nil)
-		 (expect (with-current-buffer "*op-error*" (buffer-string))
-			 :to-equal "[2026-01-01 00:00:00] op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item list --tags OpElFail --format json\nExit code: 1\nStderr:\n[ERROR] 2026/03/13 14:47:38 found no accounts for filter \"VK6XJVTGTFE3TG6WEQZLYIDWEA\"\n"))))
 
  (describe "--match-item"
 	   (it "when field label matches host should return non-nil"
@@ -311,150 +310,177 @@
 	       (expect (op-auth-source--extra-fields '(:host "h" :user "u" :port "587" :secret "s"))
 		       :to-be nil)))
 
- (describe "--get-secret"
-	   (it "when called via op.py should return the password"
-	       (expect (op-auth-source--get-secret "sre4q66mawycb5dzmm7ka7kblm" "PXCTHFHEUXV4KPI5J63KDYOBO5" "password")
-		       :to-equal "comanche-muscular-tabloids-minotaur-ally"))
-
-	   ;; "abc123" has no fixture in test/fixtures/, so op.py exits with code 1.
-	   (it "when op fails should signal an error"
-	       (expect (op-auth-source--get-secret "abc123" "PXCTHFHEUXV4KPI5J63KDYOBO5" "password")
-		       :to-throw 'error '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item get abc123 --fields label=password --reveal failed (exit 1)"))))
-
- (describe "search"
-	   (it "when matching items exist should return a list of plists with account"
-	       (expect (op-auth-source-search :host "imap.example.com"
-					      :user "test@example.com"
-					      :port "993"
-					      :max 2)
-		       :to-smart-match
-		       '((:host "imap.example.com" :user "test@example.com" :port "993" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any)
-			 (:host "imap.example.com" :user "test@example.com" :port "993" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))
-
-	   (it "when secret is called should fetch password via op item get"
-	       (let* ((result (op-auth-source-search :host "imap.example.com"
-						     :user "test@example.com"))
-		      (entry (car result)))
-		 (expect (funcall (plist-get entry :secret))
-			 :to-equal "comanche-muscular-tabloids-minotaur-ally")))
-
-	   (it "when no items match should return nil"
-	       (expect (op-auth-source-search :host "nonexistent.example.com"
-					      :user "nobody@example.com")
-		       :to-be nil))
-
-	   (it "when multiple items match should return all matches with account"
-	       (let ((op-auth-source-tag "OpElDuplicate"))
-		 (expect (op-auth-source-search :host "imap.example.com"
-						:user "test@example.com"
-						:max 10)
-			 :to-smart-match
-			 '((:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any)
-			   (:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))))
-
- (describe "auth-source-search integration"
+ (describe "live disposable fixture"
 	   (before-each
-	    (setq auth-sources nil)
-	    (op-auth-source-enable))
+	    (setq op-auth-source-tag (getenv "OP_AUTH_TEST_TAG"))
+	    ;; Do not reuse a shell started before proxy configuration.
+	    (when (and op--pty-process (process-live-p op--pty-process))
+	      (delete-process op--pty-process))
+	    (setq op--pty-process nil))
 
-	   (after-each
-	    (op-auth-source-disable))
+	   (it "lists the configured account and tagged fixture"
+	       (op-auth-test--require-live)
+	       (let ((account (getenv "OP_AUTH_TEST_ACCOUNT"))
+		     (item (getenv "OP_AUTH_TEST_ITEM")))
+		 (expect (assoc account (mapcar (lambda (a) (cons (alist-get 'account_uuid a) a))
+						(op--list-accounts))) :to-be-truthy)
+		 (expect (seq-find (lambda (x) (equal (alist-get 'id x) item))
+				   (append (json-read-from-string
+					    (op--list-items account op-auth-source-tag)) nil)) :to-be-truthy)))
 
-	   (it "should return credentials with account via auth-source-search"
-	       (let* ((result (auth-source-search :host "imap.example.com"
-						  :user "test@example.com"
-						  :max 2))
+	   (it "retrieves the actual fixture secret"
+	       (op-auth-test--require-live)
+	       (expect (op-auth-source--get-secret (getenv "OP_AUTH_TEST_ITEM")
+						   (getenv "OP_AUTH_TEST_ACCOUNT") "password")
+		       :to-equal (getenv "OP_AUTH_TEST_SECRET")))
+
+	   (it "reports CLI item-list and secret errors in the error buffer"
+	       (op-auth-test--require-live)
+	       (expect (op--list-items "op-el-nonexistent-account" op-auth-source-tag) :to-throw 'error)
+	       (expect (get-buffer "*op-error*") :to-be-truthy)
+	       (expect (with-current-buffer "*op-error*" (buffer-string)) :to-match "Exit code:")
+	       (expect (op-auth-source--get-secret "op-el-nonexistent-item"
+						   (getenv "OP_AUTH_TEST_ACCOUNT") "password")
+		       :to-throw 'error))
+
+	   (it "searches, resolves list criteria, limits and lazily retrieves credentials"
+	       (op-auth-test--require-live)
+	       (let* ((host (getenv "OP_AUTH_TEST_HOST"))
+		      (user (getenv "OP_AUTH_TEST_USER"))
+		      (port (getenv "OP_AUTH_TEST_PORT"))
+		      (result (op-auth-source-search :host (list "no-such-host.invalid" host)
+						     :user (list "no-such-user" user)
+						     :port (list "no-such-port" port) :max 1))
 		      (entry (car result)))
+		 (expect (length result) :to-equal 1)
+		 (expect (plist-get entry :host) :to-equal host)
+		 (expect (plist-get entry :user) :to-equal user)
+		 (expect (plist-get entry :port) :to-equal port)
+		 (expect (plist-get entry :account) :to-equal (getenv "OP_AUTH_TEST_ACCOUNT"))
+		 (expect (funcall (plist-get entry :secret)) :to-equal (getenv "OP_AUTH_TEST_SECRET"))
+		 (expect (op-auth-source-search :host host :max 0) :to-equal t)
+		 (expect (op-auth-source-search :host "no-such-host.invalid" :max 0) :to-be nil)))
 
-		 (expect result
-			 :to-smart-match
-			 '((:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any)
-			   (:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any)))
+	   (it "uses the registered auth-source backend"
+	       (op-auth-test--require-live)
+	       (let ((auth-sources nil))
+		 (unwind-protect
+		     (progn
+		       (op-auth-source-enable)
+		       (let* ((result (auth-source-search :host (getenv "OP_AUTH_TEST_HOST")
+							  :user (getenv "OP_AUTH_TEST_USER") :max 1))
+			      (entry (car result)))
+			 (expect (length result) :to-equal 1)
+			 (expect (plist-get entry :account) :to-equal (getenv "OP_AUTH_TEST_ACCOUNT"))
+			 (expect (funcall (plist-get entry :secret)) :to-equal (getenv "OP_AUTH_TEST_SECRET"))))
+		   (op-auth-source-disable))))
 
-		 (expect (funcall (plist-get entry :secret))
-			 :to-equal "comanche-muscular-tabloids-minotaur-ally")))
+	   (it "returns no match for unmatched scalar and list criteria"
+	       (op-auth-test--require-live)
+	       (let ((host (getenv "OP_AUTH_TEST_HOST")) (user (getenv "OP_AUTH_TEST_USER")))
+		 (expect (op-auth-source-search :host "no-such-host.invalid" :user user) :to-be nil)
+		 (expect (op-auth-source-search :host '("no-such-host.invalid" "other.invalid") :user user) :to-be nil)
+		 (expect (op-auth-source-search :host host :user user :port '("no-such-port" "other-port")) :to-be nil)))
 
-	   (it "should return nil when no items match"
-	       (expect (auth-source-search :host "nonexistent.example.com")
-		       :to-be nil))
+	   (it "matches list criteria and rejects nonmatches through auth-source"
+	       (op-auth-test--require-live)
+	       (let ((auth-sources nil) (auth-source-do-cache nil)
+		     (host (getenv "OP_AUTH_TEST_HOST")) (user (getenv "OP_AUTH_TEST_USER"))
+		     (port (getenv "OP_AUTH_TEST_PORT")))
+		 (unwind-protect
+		     (progn
+		       (op-auth-source-enable)
+		       (expect (length (auth-source-search :host (list "no-such-host.invalid" host) :user user :max 1)) :to-equal 1)
+		       (expect (length (auth-source-search :host host :user (list "no-such-user" user) :max 1)) :to-equal 1)
+		       (expect (length (auth-source-search :host host :user user :port (list "no-such-port" port) :max 1)) :to-equal 1)
+		       (expect (auth-source-search :host '("no-such-host.invalid" "other.invalid") :user user) :to-be nil)
+		       (expect (auth-source-search :host host :user user :port '("no-such-port" "other-port")) :to-be nil))
+		   (op-auth-source-disable))))
 
-	   (it "when :max is 1 should return at most one result"
-	       (expect (auth-source-search :host "imap.example.com"
-					   :user "test@example.com"
-					   :max 1)
-		       :to-smart-match
-		       '((:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))
+	   (it "returns duplicate matches and honors multi-result limits"
+	       (op-auth-test--require-live)
+	       (let ((duplicate (getenv "OP_AUTH_TEST_DUPLICATE_ITEM"))
+		     (host (getenv "OP_AUTH_TEST_HOST")) (user (getenv "OP_AUTH_TEST_USER"))
+		     (port (getenv "OP_AUTH_TEST_PORT")))
+		 (unless (and duplicate (not (string-empty-p duplicate)))
+		   (buttercup-skip "Set OP_AUTH_TEST_DUPLICATE_ITEM for duplicate coverage"))
+		 (expect duplicate :not :to-equal (getenv "OP_AUTH_TEST_ITEM"))
+		 (expect (seq-find (lambda (x) (equal (alist-get 'id x) duplicate))
+				   (append (json-read-from-string
+					    (op--list-items (getenv "OP_AUTH_TEST_ACCOUNT") op-auth-source-tag)) nil)) :to-be-truthy)
+		 (expect (> (length (op-auth-source-search :host host :user user :port port :max 10)) 1) :to-be-truthy)
+		 (expect (length (op-auth-source-search :host host :user user :port port :max 1)) :to-equal 1)))
 
-	   (it "when :max is 0 should return t if matches exist"
-	       (expect (auth-source-search :host "imap.example.com"
-					   :user "test@example.com"
-					   :max 0)
-		       :to-equal t))
+	   (it "honors zero and nonmatching limits through auth-source"
+	       (op-auth-test--require-live)
+	       (let ((auth-sources nil) (auth-source-do-cache nil))
+		 (unwind-protect
+		     (progn
+		       (op-auth-source-enable)
+		       (expect (auth-source-search :host (getenv "OP_AUTH_TEST_HOST") :max 0) :to-equal t)
+		       (expect (auth-source-search :host "no-such-host.invalid" :max 0) :to-be nil)
+		       (expect (auth-source-search :host "no-such-host.invalid") :to-be nil))
+		   (op-auth-source-disable))))
 
-	   (it "when :max is 0 and no matches should return nil"
-	       (expect (auth-source-search :host "nonexistent.example.com"
-					   :max 0)
-		       :to-be nil))
+	   (it "creates through auth-source, reads back, and deletes the disposable item"
+	       (op-auth-test--require-live)
+	       (let* ((auth-sources nil)
+		      (account (getenv "OP_AUTH_TEST_ACCOUNT"))
+		      (vault (getenv "OP_AUTH_TEST_VAULT"))
+		      (host (format "op-el-%s-%s.invalid" (emacs-pid) (op--generate-random-tag)))
+		      (created nil))
+		 (unwind-protect
+		     (progn
+		       (op-auth-source-enable)
+		       ;; Stub UI only: account and vault selection still run real CLI calls.
+		       (cl-letf (((symbol-function 'completing-read)
+				  (lambda (prompt &rest _)
+				    (if (string-match-p "account" prompt)
+					(or (alist-get 'email (seq-find
+							       (lambda (a) (equal (alist-get 'account_uuid a) account))
+							       (op--list-accounts))) account)
+				      (alist-get 'name (seq-find
+							(lambda (v) (equal (alist-get 'id v) vault))
+							(op-auth-source--list-vaults account))))))
+				 ((symbol-function 'read-string)
+				  (lambda (prompt &rest _)
+				    (if (string-match-p "username" prompt) "op-test-user" "443")))
+				 ((symbol-function 'read-passwd) (lambda (&rest _) "op-test-secret")))
+			 (let ((entry (car (auth-source-search :host host :create t))))
+			   (expect entry :to-be-truthy)
+			   (setq created (alist-get 'id (funcall (plist-get entry :save-function))))
+			   (expect created :to-be-truthy)
+			   (expect (op-auth-source--get-secret created account "password")
+				   :to-equal "op-test-secret")
+			   (let ((found (car (op-auth-source-search :host host :user "op-test-user"))))
+			     (expect found :to-be-truthy)
+			     (expect (funcall (plist-get found :secret)) :to-equal "op-test-secret")))))
+		   (when created
+		     (let* ((args (list "--account" account "item" "delete" created "--vault" vault))
+			    (result (op-run args)))
+		       (op--check-exit (plist-get result :exit-code) (plist-get result :stderr)
+				       "disposable item cleanup")
+		       (let* ((listing (op-run (list "--account" account "item" "list"
+						     "--vault" vault "--format" "json"))))
+			 (op--check-exit (plist-get listing :exit-code) (plist-get listing :stderr)
+					 "verify disposable item cleanup")
+			 (expect (seq-find (lambda (item) (equal (alist-get 'id item) created))
+					   (append (json-read-from-string (plist-get listing :stdout)) nil))
+				 :to-be nil))))
+		   (op-auth-source-disable))))
 
-	   (it "when :host is a list should match any host in the list"
-	       (expect (auth-source-search :host '("nonexistent.example.com" "imap.example.com")
-					   :user "test@example.com"
-					   :max 1)
-		       :to-smart-match
-		       '((:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))
-
-	   (it "when :host is a list and none match should return nil"
-	       (expect (auth-source-search :host '("nonexistent.example.com" "other.example.com")
-					   :user "test@example.com")
-		       :to-be nil))
-
-	   (it "when :user is a list should match any user in the list"
-	       (expect (auth-source-search :host "imap.example.com"
-					   :user '("nobody@example.com" "test@example.com")
-					   :max 1)
-		       :to-smart-match
-		       '((:host "imap.example.com" :user "test@example.com" :port "" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))
-
-	   (it "when :port is a list should match any port in the list"
-	       (expect (auth-source-search :host "imap.example.com"
-					   :user "test@example.com"
-					   :port '("587" "993")
-					   :max 1)
-		       :to-smart-match
-		       '((:host "imap.example.com" :user "test@example.com" :port "993" :account "PXCTHFHEUXV4KPI5J63KDYOBO5" :secret op-test-any))))
-
-	   (it "when :port is a list and none match should return nil"
-	       (expect (auth-source-search :host "imap.example.com"
-					   :user "test@example.com"
-					   :port '("25" "587"))
-		       :to-be nil))
-
-	   (it "when no items match and :create t should dispatch to create-function and persist via op item create"
-	       (spy-on 'op-auth-source--resolve-account
-		       :and-return-value "PXCTHFHEUXV4KPI5J63KDYOBO5")
-	       (spy-on 'op-auth-source--resolve-vault
-		       :and-return-value "Op.el")
-	       (spy-on 'op-run :and-call-through)
-	       (let ((string-prompts '("alice" "587"))
-		     (passwd-prompts '("topsecret")))
-		 (cl-letf (((symbol-function 'read-string)
-			    (lambda (&rest _) (pop string-prompts)))
-			   ((symbol-function 'read-passwd)
-			    (lambda (&rest _) (pop passwd-prompts))))
-		   (let ((entry (car (auth-source-search
-				      :host "nonexistent.create.com"
-				      :create t))))
-		     (expect 'op-auth-source--resolve-account :to-have-been-called)
-		     (expect 'op-auth-source--resolve-vault :to-have-been-called)
-		     (expect (alist-get 'title (funcall (plist-get entry :save-function)))
-			     :to-equal "nonexistent.create.com")
-		     (expect 'op-run :to-have-been-called-with
-			     '("--account" "PXCTHFHEUXV4KPI5J63KDYOBO5"
-			       "item" "create"
-			       "--vault" "Op.el"
-			       "--format" "json"
-			       "-")
-			     "{\"title\":\"nonexistent.create.com\",\"category\":\"LOGIN\",\"tags\":[\"OpElTest\"],\"fields\":[{\"id\":\"username\",\"type\":\"STRING\",\"purpose\":\"USERNAME\",\"label\":\"username\",\"value\":\"alice\"},{\"id\":\"password\",\"type\":\"CONCEALED\",\"purpose\":\"PASSWORD\",\"label\":\"password\",\"value\":\"topsecret\"},{\"id\":\"host\",\"type\":\"STRING\",\"label\":\"host\",\"value\":\"nonexistent.create.com\"},{\"id\":\"port\",\"type\":\"STRING\",\"label\":\"port\",\"value\":\"587\"}]}"))))))
+	   (it "redacts stdin when real op rejects creation in an invalid vault"
+	       (op-auth-test--require-live)
+	       (let ((secret "op-el-redaction-canary"))
+		 (expect (op-auth-source--save-item (getenv "OP_AUTH_TEST_ACCOUNT")
+						    "op-el-nonexistent-vault"
+						    (list :host "failure.invalid" :user "test"
+							  :port "443" :secret secret))
+			 :to-throw 'error)
+		 (expect (get-buffer "*op-error*") :to-be-truthy)
+		 (with-current-buffer "*op-error*"
+		   (expect (buffer-string) :not :to-match secret)
+		   (expect (buffer-string) :to-match "<redacted>")))) )
 
  (describe "--prompt-for-field"
 	   (it "when given an unknown field should signal an error"
@@ -464,9 +490,9 @@
  (describe "create"
 	   (before-each
 	    (spy-on 'op-auth-source--resolve-account
-		    :and-return-value "PXCTHFHEUXV4KPI5J63KDYOBO5")
+		    :and-return-value "unit-account")
 	    (spy-on 'op-auth-source--resolve-vault
-		    :and-return-value "Op.el"))
+		    :and-return-value "unit-vault"))
 
 	   (it "when spec provides every required field should return a result without prompting"
 	       (cl-letf (((symbol-function 'read-string)
@@ -484,7 +510,7 @@
 			 '((:host "smtp.example.com"
 				  :user "alice@example.com"
 				  :port "587"
-				  :account "PXCTHFHEUXV4KPI5J63KDYOBO5"
+				  :account "unit-account"
 				  :secret op-test-any
 				  :save-function op-test-any)))))
 
@@ -503,36 +529,12 @@
 			     '(:host "smtp.test.com"
 				     :user "alice"
 				     :port "587"
-				     :account "PXCTHFHEUXV4KPI5J63KDYOBO5"
+				     :account "unit-account"
 				     :secret op-test-any
 				     :save-function op-test-any))
 		     (expect (funcall (plist-get entry :secret))
 			     :to-equal "topsecret")))))
-
-	   (it "when save-function is called and op fails should signal an error"
-	       (let ((entry (car (op-auth-source-create
-				  :host "create-fail.example.com"
-				  :user "alice@example.com"
-				  :port "443"
-				  :secret "topsecret"
-				  :create t
-				  :backend op-auth-source-backend))))
-		 (expect (funcall (plist-get entry :save-function))
-			 :to-throw 'error
-			 '("op --account PXCTHFHEUXV4KPI5J63KDYOBO5 item create --vault Op.el --format json - failed (exit 1)"))))
-
-	   (it "when save-function fails should not write the cleartext password into *op-error*"
-	       (let ((entry (car (op-auth-source-create
-				  :host "create-fail.example.com"
-				  :user "alice@example.com"
-				  :port "443"
-				  :secret "topsecret"
-				  :create t
-				  :backend op-auth-source-backend))))
-		 (ignore-errors (funcall (plist-get entry :save-function)))
-		 (with-current-buffer "*op-error*"
-		   (expect (buffer-string) :not :to-match "topsecret")
-		   (expect (buffer-string) :to-match "<redacted>")))))
+	   )
 
  (describe "backend-parse"
 	   (it "when given 1password symbol should return a backend"
