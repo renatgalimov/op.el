@@ -32,6 +32,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'minibuffer)
 (require 'subr-x)
 (require 'time)
 
@@ -97,6 +98,215 @@ You can specify an ACCOUNT to read from a specific 1Password account."
                        (list "read" path)))
          (result (op-run args)))
     (string-trim (plist-get result :stdout))))
+
+(add-to-list 'completion-styles-alist
+             '(op-substring op--completion-try op--completion-all
+                            "Case-insensitive substring completion for op references."))
+(add-to-list 'completion-category-defaults
+             '(op-reference (styles op-substring)))
+
+(defvar-local op--completion-cache nil
+  "Cached item paths and their expiry time for this buffer.")
+
+(defun op-completion-at-point ()
+  "Complete 1Password item paths and fields after `op://' at point.
+Use with `completion-at-point-functions'."
+  (or (op--field-completion-at-point)
+      (op--item-completion-at-point)))
+
+(defun op--field-completion-at-point ()
+  "Return a completion table for fields after a vault and item."
+  (let ((end (save-excursion
+               (skip-chars-forward "^ \t\"'()\n,;{}<>`")
+               (point))))
+    (save-excursion
+      (when (and (re-search-backward
+                  "op://\\([^/\"'()\n,;{}<>`]+\\)/\\([^/\"'()\n,;{}<>`]+\\)/\\([^ \t\"'()\n,;{}<>`]*\\)\\="
+                  (line-beginning-position) t)
+                 (or (= (match-beginning 0) (point-min))
+                     (not (string-match-p "[[:alnum:]_+.-]"
+                                          (string (char-before (match-beginning 0)))))))
+        (let ((vault (match-string-no-properties 1))
+              (item (match-string-no-properties 2))
+              (begin (copy-marker (match-beginning 3)))
+              (buffer (current-buffer))
+              (candidates nil)
+              (loaded nil))
+          (list begin end
+                (lambda (string predicate action)
+                  (when (buffer-live-p buffer)
+                    (with-current-buffer buffer
+                      (if (eq action 'metadata)
+                          '(metadata (category . op-reference))
+                        (unless (and (consp action) (eq (car action) 'boundaries))
+                          (condition-case err
+                              (progn
+                                (unless loaded
+                                  (setq candidates (op--completion-fields vault item)
+                                        loaded t))
+                                (complete-with-action action (mapcar #'car candidates) string predicate))
+                            (error (setq loaded t)
+                                   (message "1Password completion failed: %s" (error-message-string err))
+                                   nil)))))))
+                :exit-function
+                (lambda (candidate status)
+                  (when (buffer-live-p buffer)
+                    (with-current-buffer buffer
+                      (op--completion-exit begin candidate status candidates))))))))))
+
+(defun op--completion-fields (vault item)
+  "Return field display names and reference suffixes for ITEM in VAULT.
+Only field metadata is retained; `op item get' may return secret values."
+  (let (result details)
+    (unwind-protect
+        (progn
+          (setq result (op-run (op--completion-get-args vault item)))
+          (op--check-exit (plist-get result :exit-code) (plist-get result :stderr)
+                          "op item get for completion")
+          (setq details (json-read-from-string (plist-get result :stdout)))
+          (delq nil (mapcar #'op--completion-field-path
+                            (append (alist-get 'fields details) nil))))
+      (dolist (field (append (alist-get 'fields details) nil))
+        (let ((value (alist-get 'value field)))
+          (when (stringp value) (clear-string value))))
+      (when (stringp (plist-get result :stdout))
+        (clear-string (plist-get result :stdout)))
+      (when (stringp op--pty-output) (clear-string op--pty-output))
+      (setq op--pty-output ""))))
+
+(defun op--completion-get-args (vault item)
+  "Build safe `op item get' arguments for VAULT and ITEM."
+  (list "item" "get" (concat "--vault=" vault) "--format" "json" "--" item))
+
+(defun op--completion-field-path (field)
+  "Return a display name and usable reference suffix for FIELD."
+  (let ((reference (alist-get 'reference field))
+        (label (or (alist-get 'label field) (alist-get 'id field)))
+        (section (alist-get 'label (alist-get 'section field))))
+    (when (and (stringp reference) (stringp label)
+               (string-match "\\`op://[^/]+/[^/]+/\\(.+\\)\\'" reference))
+      (let* ((path (match-string 1 reference))
+             (name (if section (concat section "/" label) label)))
+        (cons (if (equal name path) path
+                (format "%s [%s]" (replace-regexp-in-string "[\n\r\t]" " " name)
+                        (alist-get 'id field)))
+              path)))))
+
+(defun op--item-completion-at-point ()
+  "Return a completion table for item references."
+  (let ((end (save-excursion
+               (skip-chars-forward "^ \t\"'()\n,;{}<>`/")
+               (point))))
+    (save-excursion
+      (when (and (re-search-backward "op://\\([^ \t\"'()\n,;{}<>`]*\\)\\="
+                                     (line-beginning-position) t)
+                 (or (= (match-beginning 0) (point-min))
+                     (not (string-match-p "[[:alnum:]_+.-]"
+                                          (string (char-before (match-beginning 0))))))
+                 (< (cl-count ?/ (match-string 1)) 2)
+                 (not (and (eq (char-after end) ?/)
+                           (not (string-match-p "/" (match-string 1))))))
+        (let ((begin (copy-marker (match-beginning 1)))
+              (buffer (current-buffer)))
+          (list begin end (lambda (string predicate action)
+                            (when (buffer-live-p buffer)
+                              (with-current-buffer buffer
+                                (op--completion-table string predicate action))))
+                :exit-function (lambda (candidate status)
+                                 (when (buffer-live-p buffer)
+                                   (with-current-buffer buffer
+                                     (op--completion-exit begin candidate status))))))))))
+
+(defun op--completion-table (string predicate action)
+  "Complete STRING using item paths, PREDICATE and completion ACTION."
+  (if (eq action 'metadata)
+      '(metadata (category . op-reference))
+    (condition-case err
+        (unless (and (consp action) (eq (car action) 'boundaries))
+          (complete-with-action action (mapcar #'car (op--completion-candidates)) string predicate))
+      (error (message "1Password completion failed: %s" (error-message-string err)) nil))))
+
+(defun op--completion-candidates ()
+  "Return item reference paths from the current 1Password account."
+  (if (and op--completion-cache (< (float-time) (car op--completion-cache)))
+      (cdr op--completion-cache)
+    (condition-case err
+        (let ((paths (op--completion-item-paths
+                      (op--run-json-list '("item" "list" "--format" "json")
+                                         "op item list --format json"))))
+          (setq op--completion-cache (cons (+ (float-time) 3) paths))
+          paths)
+      (error (setq op--completion-cache (cons (+ (float-time) 3) nil))
+             (signal (car err) (cdr err))))))
+
+(defun op--completion-item-paths (items)
+  "Return display names and reference paths for the item summaries ITEMS."
+  (let ((vaults (make-hash-table :test #'equal))
+        (titles (make-hash-table :test #'equal)))
+    (dolist (item items)
+      (let* ((vault (alist-get 'vault item))
+             (vault-id (alist-get 'id vault))
+             (vault-name (downcase (or (alist-get 'name vault) "")))
+             (title-key (cons vault-id (downcase (or (alist-get 'title item) ""))))
+             (previous (gethash vault-name vaults)))
+        (puthash vault-name (if (and previous (not (equal previous vault-id)))
+                                'duplicate
+                              vault-id) vaults)
+        (puthash title-key (1+ (gethash title-key titles 0)) titles)))
+    (mapcar (lambda (item) (op--completion-item-path item vaults titles)) items)))
+
+(defun op--completion-item-path (item vaults titles)
+  "Return a display name and reference path for ITEM using VAULTS and TITLES."
+  (let* ((vault (alist-get 'vault item))
+         (vault-name (alist-get 'name vault))
+         (vault-id (alist-get 'id vault))
+         (title (alist-get 'title item))
+         (duplicate-vault (eq (gethash (downcase (or vault-name "")) vaults) 'duplicate))
+         (duplicate-title (> (gethash (cons vault-id (downcase (or title ""))) titles 0) 1))
+         (id (alist-get 'id item))
+         (path (format "%s/%s"
+                       (op--completion-reference-part vault-name vault-id duplicate-vault)
+                       (op--completion-reference-part title id duplicate-title)))
+         (name (format "%s/%s" (or vault-name vault-id) (or title id))))
+    (cons (if (equal path name) path
+            (format "%s [%s]" (replace-regexp-in-string "[\n\r\t]" " " name) id))
+          path)))
+
+(defun op--completion-reference-part (name id duplicate)
+  "Use NAME when supported and unambiguous; otherwise use ID.
+DUPLICATE means the name identifies more than one object."
+  (let ((case-fold-search nil))
+    (if (and (not duplicate) (stringp name) (equal name (string-trim name))
+             (string-match-p "\\`[A-Za-z0-9._ -]+\\'" name))
+        name
+      id)))
+
+(defun op--completion-exit (begin candidate status &optional candidates)
+  "Replace CANDIDATE at BEGIN after STATUS using CANDIDATES or the cache."
+  (when (memq status '(finished sole))
+    (let* ((path (cdr (assoc-string candidate (or candidates (cdr op--completion-cache)))))
+           (start (marker-position begin))
+           (end (and start (+ start (length candidate)))))
+      (when (and path start (<= end (point-max))
+                 (equal candidate (buffer-substring-no-properties start end)))
+        (delete-region start end)
+        (goto-char start)
+        (insert path)))))
+
+(defun op--completion-try (string table predicate point)
+  "Try case-insensitive substring completion of STRING in TABLE at POINT.
+PREDICATE filters the candidates."
+  (let ((completion-ignore-case t))
+    (let ((matches (completion-substring-all-completions string table predicate point)))
+      (if (and (consp matches) (consp (cdr matches)))
+          (cons string point)
+        (completion-substring-try-completion string table predicate point)))))
+
+(defun op--completion-all (string table predicate point)
+  "Return case-insensitive substring completions of STRING in TABLE at POINT.
+PREDICATE filters the candidates."
+  (let ((completion-ignore-case t))
+    (completion-substring-all-completions string table predicate point)))
 
 (defun op--fetch-items (tag)
   "Fetch full 1Password items tagged with TAG.

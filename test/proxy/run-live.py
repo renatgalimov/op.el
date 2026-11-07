@@ -75,17 +75,20 @@ def run():
         creation_attempted = True
         vault_id = op("vault", "create", vault_name, "--format=json")["id"]
         print(f"Disposable vault created: {vault_name} ({vault_id})", file=sys.stderr, flush=True)
-        for title in ("op-el-test", "op-el-test-duplicate"):
-            template = {"title": title, "category": "LOGIN", "tags": [tag], "fields": [
+        for index, title in enumerate(("op-el-test", "op-el-test-duplicate", "op-el-Production/with slash", "op-el-test", "--reveal")):
+            template = {"title": title, "category": "LOGIN", "tags": [tag] if index < 2 else [], "fields": [
                 {"id": "username", "type": "STRING", "purpose": "USERNAME", "label": "username", "value": "fixture@example.invalid"},
                 {"id": "password", "type": "CONCEALED", "purpose": "PASSWORD", "label": "password", "value": SECRET},
                 {"id": "host", "type": "STRING", "label": "host", "value": "fixture.invalid"},
                 {"id": "port", "type": "STRING", "label": "port", "value": "993"}]}
+            if index == 4:
+                template["sections"] = [{"id": "demosection", "label": "Demo Section"}]
+                template["fields"].append({"id": "api_key", "type": "CONCEALED", "label": "api/token", "section": {"id": "demosection"}, "value": SECRET})
             item = op("item", "create", "--vault", vault_id, "--format=json", "-", input_data=json.dumps(template).encode())
             item_ids.append(item["id"])
             if op("item", "get", item["id"], "--vault", vault_id, "--format=json").get("title") != title:
                 raise RuntimeError("Created item did not read back correctly")
-        env = dict(os.environ, OP_TEST_VAULT_ID=vault_id, OP_TEST_ITEM_ID=item_ids[0], OP_AUTH_TEST_ACCOUNT=account, OP_AUTH_TEST_VAULT=vault_id, OP_AUTH_TEST_ITEM=item_ids[0], OP_AUTH_TEST_DUPLICATE_ITEM=item_ids[1], OP_AUTH_TEST_TAG=tag, OP_AUTH_TEST_HOST="fixture.invalid", OP_AUTH_TEST_USER="fixture@example.invalid", OP_AUTH_TEST_PORT="993", OP_AUTH_TEST_SECRET=SECRET)
+        env = dict(os.environ, OP_TEST_VAULT_ID=vault_id, OP_TEST_ITEM_ID=item_ids[0], OP_TEST_COMPLETION_ITEM_ID=item_ids[2], OP_TEST_DUPLICATE_TITLE_ID=item_ids[3], OP_AUTH_TEST_ACCOUNT=account, OP_AUTH_TEST_VAULT=vault_id, OP_AUTH_TEST_ITEM=item_ids[0], OP_AUTH_TEST_DUPLICATE_ITEM=item_ids[1], OP_AUTH_TEST_TAG=tag, OP_AUTH_TEST_HOST="fixture.invalid", OP_AUTH_TEST_USER="fixture@example.invalid", OP_AUTH_TEST_PORT="993", OP_AUTH_TEST_SECRET=SECRET)
         cleanup_safe = False
         try:
             tests = run_suite(["make", "test"], env, timeout=300)
