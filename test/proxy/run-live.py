@@ -86,11 +86,12 @@ def run():
             if op("item", "get", item["id"], "--vault", vault_id, "--format=json").get("title") != title:
                 raise RuntimeError("Created item did not read back correctly")
         env = dict(os.environ, OP_TEST_VAULT_ID=vault_id, OP_TEST_ITEM_ID=item_ids[0], OP_AUTH_TEST_ACCOUNT=account, OP_AUTH_TEST_VAULT=vault_id, OP_AUTH_TEST_ITEM=item_ids[0], OP_AUTH_TEST_DUPLICATE_ITEM=item_ids[1], OP_AUTH_TEST_TAG=tag, OP_AUTH_TEST_HOST="fixture.invalid", OP_AUTH_TEST_USER="fixture@example.invalid", OP_AUTH_TEST_PORT="993", OP_AUTH_TEST_SECRET=SECRET)
+        cleanup_safe = False
         try:
             tests = run_suite(["make", "test"], env, timeout=300)
         except subprocess.TimeoutExpired:
-            cleanup_safe = False
             raise RuntimeError("Live test suite timed out; its descendants may still be running")
+        cleanup_safe = True
         output = tests.stdout.decode(errors="replace")
         output = re.sub(r"\x1b\[[0-9;]*m", "", output)
         summaries = re.findall(r"Ran (\d+)(?: out of (\d+))? specs, (\d+) failed[^\n]*", output)
@@ -101,7 +102,7 @@ def run():
             raise RuntimeError(f"Live suite failed or skipped specs; private diagnostic log: {log}")
         print(f"Live suite: {summaries[-1][0]} specs passed, none skipped")
         result = 0
-    except AmbiguousCreationError:
+    except (AmbiguousCreationError, KeyboardInterrupt):
         cleanup_safe = False
         raise
     finally:
@@ -135,13 +136,13 @@ def run():
 
 
 def run_suite(command, env, timeout):
-    """Stop the test process group on timeout before returning control."""
+    """Stop the test process group on timeout or interruption."""
     process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                start_new_session=True)
     try:
         output, _ = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:

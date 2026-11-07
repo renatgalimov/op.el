@@ -460,9 +460,13 @@
 			    (result (op-run args)))
 		       (op--check-exit (plist-get result :exit-code) (plist-get result :stderr)
 				       "disposable item cleanup")
-		       (expect (plist-get (op-run (list "--account" account "item" "get" created
-							"--vault" vault "--format" "json"))
-					  :exit-code) :not :to-equal 0)))
+		       (let* ((listing (op-run (list "--account" account "item" "list"
+						     "--vault" vault "--format" "json"))))
+			 (op--check-exit (plist-get listing :exit-code) (plist-get listing :stderr)
+					 "verify disposable item cleanup")
+			 (expect (seq-find (lambda (item) (equal (alist-get 'id item) created))
+					   (append (json-read-from-string (plist-get listing :stdout)) nil))
+				 :to-be nil))))
 		   (op-auth-source-disable))))
 
 	   (it "redacts stdin when real op rejects creation in an invalid vault"
